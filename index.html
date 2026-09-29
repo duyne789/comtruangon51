@@ -6,6 +6,7 @@
   © 2026 Duy Nguyễn — All rights reserved.
   Unauthorized cloning without credit is not allowed.
   Build-id: CTN-DN-2026
+  verison:1.5
 -->
 <html lang="vi">
 <head>
@@ -227,6 +228,9 @@
     .item-row .info .name{font-weight:700;font-size:13px}
     .item-row .info .desc{font-size:10px;color:var(--ink2);font-weight:600}
     .item-row .ctrl{display:flex;align-items:center;gap:3px;flex-shrink:0}
+    .item-row .qty,.item-row .qty-input{min-width:36px;max-width:52px;width:42px;text-align:center;font-weight:800;font-size:14px;border:1.5px solid #E8D5C8;border-radius:8px;padding:4px 2px;background:#fff;color:inherit;font-family:inherit;-moz-appearance:textfield}
+    .item-row .qty-input::-webkit-outer-spin-button,.item-row .qty-input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+    .item-row .qty-input:focus{outline:none;border-color:#E84A6F;box-shadow:0 0 0 2px rgba(232,74,111,.2)}
     .item-row .ctrl button{
       min-width:28px;height:28px;padding:0 5px;border-radius:9px;background:#FFF0F3;
       font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center;
@@ -2726,26 +2730,29 @@ function markStockIn(id,qty){
 }
 function processSpoilage(){
   if(!S.stockAge)S.stockAge={};
-  let msgs=[],fineTotal=0,seized=0;
+  let msgs=[],seized=0;
   for(const id of Object.keys(S.stock||{})){
     const q=Math.floor(+S.stock[id]||0);if(q<=0)continue;
     const life=SHELF_LIFE[id];if(life==null||life>=90)continue;
     const since=S.stockAge[id]!=null?S.stockAge[id]:S.day;
     const age=(S.day||1)-since;
     if(age>=life){
-      const fine=Math.min(1000,Math.max(100,(SPOIL_FINE[id]||100)*Math.min(q,5)));
-      fineTotal+=fine;seized+=q;
+      seized+=q;
       msgs.push((INGREDIENTS[id]?.name||id)+' ×'+q);
       S.stock[id]=0;delete S.stockAge[id];
     }
   }
-  if(fineTotal>0||seized>0){
-    if(fineTotal>0){
-      S.money=Math.round((S.money-fineTotal)*10)/10;
-      S.costToday=Math.round((S.costToday+fineTotal)*10)/10;
+  if(seized>0){
+    // Phạt nhẹ cố định ~10k (nhắc nhở) — chỉ xóa hàng hết hạn, không trừ két nặng
+    const fine=10;
+    const mon=Math.max(0, Math.round((Number(S.money)||0)*10)/10);
+    const take=Math.min(fine, mon);
+    if(take>0){
+      S.money=Math.round((mon-take)*10)/10;
+      S.costToday=Math.round(((S.costToday||0)+take)*10)/10;
     }
-    toast('⚠️ QLTT thu hồi '+seized+' món hết hạn · phạt '+fineTotal+'k'+(msgs.length?(': '+msgs.slice(0,3).join(', ')+(msgs.length>3?'…':'')):''));
-    sfx('bad');
+    toast('🗑️ Hết hạn · đã bỏ '+seized+' phần'+(msgs.length?(': '+msgs.slice(0,3).join(', ')+(msgs.length>3?'…':'')):'')+(take>0?' · nhắc '+take+'k':''));
+    sfx('click');
     try{revalidateAllCustWants()}catch(e){}
   }
 }
@@ -2898,7 +2905,7 @@ const CROWD_HINT={
   vang:'Ít khách (vẫn 1–3 suất) · kiên nhẫn hơn · dễ làm đúng món'
 };
 const CROWD_CFG={
-  dong:{qty:2.0,qtyAdd:10,drain:0.28,tip:1.15,event:1.2,patienceTick:0.95},
+  dong:{qty:2.0,qtyAdd:10,drain:0.12,tip:1.15,event:1.2,patienceTick:0.88},
   lairai:{qty:0.9,qtyAdd:2,drain:0,tip:1,event:1,patienceTick:1},
   vang:{qty:0.35,qtyAdd:1,drain:-0.05,tip:0.9,event:0.7,patienceTick:1.15}
 };
@@ -3892,6 +3899,7 @@ function startNewDay(){
     toast('Quá hạn nợ ngân hàng! Phạt sao');S.rating=Math.max(1.5,S.rating-0.12);
   }
   if(S.loan&&S.loan.remaining<=0){S.loan=null}
+  if((S.money||0)<-50)S.money=0;
   S.phase='prep';S.tab='kho';S.soldToday=0;S.leftToday=0;S.revenueToday=0;S.costToday=0;S.pending={};
   S.gameMin=OPEN_MIN;S.eventsToday=0;
   S.haggleLeft=3; // mỗi ngày 3 lượt trả giá
@@ -4240,6 +4248,7 @@ function showBankrupt(){
 
 
 function refreshKetUI(){
+  if(S.money!=null&&S.money<-50){S.money=Math.max(-50, Math.round(S.money*10)/10)}
   const v=moneyStr(S.money);
   const kv=document.getElementById('ket-val');
   if(kv)kv.textContent=v;
@@ -4886,7 +4895,7 @@ function renderKho(){
         <div class="ctrl">
           <button type="button" class="minus10" title="-10">−10</button>
           <button type="button" class="minus" title="-5">−</button>
-          <span class="qty">${pend}</span>
+          <input type="number" class="qty qty-input" value="${pend}" min="0" max="999" inputmode="numeric" title="Bấm để nhập số"/>
           <button type="button" class="plus" title="+5">+</button>
           <button type="button" class="plus10" title="+10">+10</button>
         </div></div>`;
@@ -4910,10 +4919,19 @@ function bindKho(){
   });
   document.querySelectorAll('.item-row[data-id]').forEach(row=>{
     const id=row.dataset.id;
+    const qtyEl=()=>row.querySelector('.qty');
     const setQty=(delta)=>{
-      S.pending[id]=Math.max(0,(S.pending[id]||0)+delta);
+      S.pending[id]=Math.max(0,Math.min(999,(S.pending[id]||0)+delta));
       if(!S.pending[id])delete S.pending[id];
-      row.querySelector('.qty').textContent=S.pending[id]||0;
+      const el=qtyEl();
+      if(el){if(el.tagName==='INPUT')el.value=S.pending[id]||0;else el.textContent=S.pending[id]||0}
+      updBuyBtn();save();
+    };
+    const setAbs=(n)=>{
+      n=Math.max(0,Math.min(999,Math.floor(+n||0)));
+      if(n<=0){delete S.pending[id];n=0}else S.pending[id]=n;
+      const el=qtyEl();
+      if(el){if(el.tagName==='INPUT')el.value=n;else el.textContent=n}
       updBuyBtn();save();
     };
     const plus=row.querySelector('.plus');
@@ -4924,6 +4942,13 @@ function bindKho(){
     if(minus)minus.onclick=e=>{e.preventDefault();e.stopPropagation();sfx('click');setQty(-5)};
     if(plus10)plus10.onclick=e=>{e.preventDefault();e.stopPropagation();sfx('add');setQty(10)};
     if(minus10)minus10.onclick=e=>{e.preventDefault();e.stopPropagation();sfx('click');setQty(-10)};
+    const inp=row.querySelector('.qty-input');
+    if(inp){
+      inp.onclick=e=>{e.stopPropagation();inp.select()};
+      inp.onchange=()=>{sfx('click');setAbs(inp.value)};
+      inp.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();inp.blur()}};
+      inp.onblur=()=>setAbs(inp.value);
+    }
   });
   document.getElementById('btn-wq')?.addEventListener('click',()=>{sfx('click');showWeekQuests()});
   document.getElementById('btn-sg')?.addEventListener('click',()=>{
@@ -5218,14 +5243,14 @@ function makeCust(c){
   const wantCanh=true;
   const cfg=CROWD_CFG[S.crowd]||CROWD_CFG.lairai;
   // Base drain nhẹ hơn — chế độ Dễ/Bình tăng startPat + giảm drainMul
-  let drain=0.72+(S.day*0.035)-((S.upgrades.ghe||0)*0.08)-((S.upgrades.phuc_vu||0)*0.06)+(cfg.drain||0);
+  let drain=0.55+(S.day*0.025)-((S.upgrades.ghe||0)*0.08)-((S.upgrades.phuc_vu||0)*0.06)+(cfg.drain||0);
   if(S.upgrades.wifi)drain-=0.08;
   if(S.upgrades.quat)drain-=0.1;
   drain*=(d.drainMul||1);
   // áp dụng patienceTick của đám đông (vang chậm hơn)
   drain*=(cfg.patienceTick||1);
-  const start=Math.max(40,Math.min(98,d.startPat!=null?d.startPat:70));
-  const drain2=Math.max(0.28,Math.min(2.2,drain+(c.isOnline||c.isShip?0.12:0)));
+  const start=Math.max(45,Math.min(98,d.startPat!=null?d.startPat:75));
+  const drain2=Math.max(0.22,Math.min(1.8,drain+(c.isOnline||c.isShip?0.10:0)));
   return {...c,extraSide,wantMam,wantCanh,isOnline:!!c.isOnline,isShip:!!(c.isShip||c.isOnline),patience:start,maxPatience:start,drain:drain2};
 }
 
@@ -5356,6 +5381,7 @@ function revalidateAllCustWants(){
   }
 
   if(switched||left)toastWantSwitch(switched,left,sample);
+  try{if(typeof fillEmptySeats==='function'&&fillEmptySeats())changed=true}catch(e){}
   return {switched,left,changed};
 }
 
@@ -5902,6 +5928,37 @@ function custLeave(i,t){
   flyOut(i,kind);
   const a=LEAVE_TXT[kind];toast(t.name+' '+a[Math.floor(Math.random()*a.length)]);sfx('bad');
 }
+/** Lấy 1 khách hợp lệ từ hàng chờ (đổi món nếu hết stock) */
+function pullNextCust(){
+  const q=S._queue||[];
+  while(q.length){
+    const raw=q.shift();
+    if(!raw)continue;
+    let mc=(raw.patience!=null)?raw:makeCust(raw);
+    if(!mc)continue;
+    if(!mc.want||!canOrderMenu(mc.want)){
+      if(!refreshCustWant(mc))continue;
+    }
+    if(mc.want&&canOrderMenu(mc.want)){S._queue=q;return mc}
+  }
+  S._queue=q;return null;
+}
+/** Lấp bàn trống từ hàng chờ — sửa bug bàn trống + 30 khách chờ */
+function fillEmptySeats(){
+  if(!tables||!tables.length)return false;
+  let changed=false;
+  for(let i=0;i<tables.length;i++){
+    if(tables[i])continue;
+    const next=pullNextCust();
+    if(!next)break;
+    tables[i]=next;changed=true;
+  }
+  if(changed){
+    const ni=tables.findIndex(t=>t);
+    if(ni>=0&&!tables[selectedTable])selectedTable=ni;
+  }
+  return changed;
+}
 function startPatienceLoop(){
   stopPatienceLoop();
   patienceTimer=setInterval(()=>{
@@ -5916,6 +5973,8 @@ function startPatienceLoop(){
         }
       }
     }catch(e){}
+    // Lấp bàn trống TRƯỚC khi trừ patience
+    try{if(fillEmptySeats())changed=true}catch(e){}
     const seatsRoot=document.getElementById('seats');
     tables.forEach((t,i)=>{
       if(!t)return;
@@ -5928,22 +5987,11 @@ function startPatienceLoop(){
       if(i===selectedTable){const of=document.getElementById('ob-face');if(of)of.textContent=faceOf(t)}
       if(t.patience<=0){
         custLeave(i,t);tables[i]=null;
-        const q=S._queue||[];
-        let next=null;
-        while(q.length&&!next){
-          const raw=q.shift();
-          if(!raw)continue;
-          let mc=(raw.patience!=null)?raw:makeCust(raw);
-          if(!mc)continue;
-          // Luôn đảm bảo món còn hàng — hết prefer thì lấy món khác
-          if(!mc.want||!canOrderMenu(mc.want)){
-            if(!refreshCustWant(mc)){continue} // không tính leftToday oan — chỉ bỏ khách này
-          }
-          if(mc.want&&canOrderMenu(mc.want))next=mc;
-        }
-        tables[i]=next;S._queue=q;changed=true;
+        tables[i]=pullNextCust();
+        changed=true;
       }
     });
+    try{if(fillEmptySeats())changed=true}catch(e){}
     const qq=S._queue||[];
     if(qq.length>=3&&Math.random()<0.02){const g=qq.splice(Math.floor(Math.random()*qq.length),1)[0];S.leftToday++;toast((g&&g.name||'Khách')+' thấy hàng dài, quay xe 🚶');changed=true}
     const bar=document.querySelector('.patience-bar i');
@@ -6254,7 +6302,7 @@ function doKick(){
     });
     if(S.reviewList.length>40)S.reviewList.length=40;
     stopCook();box={hasBox:false,hasRice:false,mains:[],sides:[],canh:null,sauce:0,mamTom:0};
-    const q=S._queue||[];tables[selectedTable]=q.length?makeCust(q.shift()):null;S._queue=q;
+    tables[selectedTable]=null;try{fillEmptySeats()}catch(e){try{tables[selectedTable]=pullNextCust()}catch(e2){}}
     const ni=tables.findIndex(t=>t);selectedTable=ni>=0?ni:0;
     toast('Đã đuổi '+cust.name+' 😤');
     modal.hidden=true;paused=false;save();updateSell();
@@ -6310,15 +6358,18 @@ function doScoopCanh(preferId){
   if(!box.hasBox){toast('Lấy đĩa trước!');sfx('bad');return}
   if(!box.hasRice){toast('Múc cơm trước!');sfx('bad');return}
   if(box.canh){toast('Đã có bát canh');sfx('bad');return}
-  // ưu tiên canh thường, rồi canh khác còn hàng
+  // Xóa canh hết hạn trước khi chọn
+  for(const id of ['canh_thuong','canh_chua','canh_kho_qua']){
+    if(stockOf(id)>0&&isIngExpired(id)){S.stock[id]=0;if(S.stockAge)delete S.stockAge[id]}
+  }
   const order=['canh_thuong','canh_chua','canh_kho_qua'];
   let pick=preferId||null;
-  if(!pick||stockOf(pick)<=0){
-    pick=order.find(id=>isIngUnlocked(id)&&stockOf(id)>0)||null;
+  if(pick&&(stockOf(pick)<=0||isIngExpired(pick)))pick=null;
+  if(!pick){
+    pick=order.find(id=>isIngUnlocked(id)&&stockOf(id)>0&&!isIngExpired(id))||null;
   }
   if(!pick){
-    // any canh in stock
-    pick=Object.keys(INGREDIENTS).find(id=>INGREDIENTS[id].role==='canh'&&stockOf(id)>0)||null;
+    pick=Object.keys(INGREDIENTS).find(id=>INGREDIENTS[id].role==='canh'&&stockOf(id)>0&&!isIngExpired(id))||null;
   }
   if(!pick){toast('Hết canh! Vào Kho nhập/nấu canh');sfx('bad');return}
   S.stock[pick]--;box.canh=pick;sfx('add');toast('🥣 Múc '+INGREDIENTS[pick].name);save();updateSell();
@@ -6329,6 +6380,11 @@ function doCookRice(){
   if(box.hasRice){toast('Đã có cơm');sfx('bad');return}
   if(cooking)return;
   if(stockOf('gao')<=0){toast('Hết cơm! Vào Kho nấu/nhập cơm');sfx('bad');return}
+  if(isIngExpired('gao')){
+    S.stock.gao=0;if(S.stockAge)delete S.stockAge.gao;
+    toast('🗑️ Cơm hết hạn đã bỏ — vào Kho nhập hàng mới');sfx('click');
+    try{revalidateAllCustWants()}catch(e){}save();updateSell();return;
+  }
   stopCook(); // clear any stale timer
   S.stock.gao--;cooking=true;cookProgress=0;sfx('cook');save();updateSell();tryAutoServe();
   // Nấu nhanh hơn ~3s: base ~0.6s, có bếp/nồi/NV còn nhanh hơn
@@ -6357,6 +6413,11 @@ function doAddTop(id){
   if(!box.hasBox){toast('Lấy đĩa trước!');sfx('bad');return}
   if(!box.hasRice){toast('Múc cơm trước!');sfx('bad');return}
   if(stockOf(id)<=0){toast('Hết '+INGREDIENTS[id].name);sfx('bad');return}
+  if(isIngExpired(id)){
+    S.stock[id]=0;if(S.stockAge)delete S.stockAge[id];
+    toast('🗑️ '+(INGREDIENTS[id]?.name||id)+' hết hạn đã bỏ — vào Kho nhập hàng mới');sfx('click');
+    try{revalidateAllCustWants()}catch(e){}save();updateSell();return;
+  }
   const role=INGREDIENTS[id].role;
   if(role==='main'){if(box.mains.length>=1){toast('Chỉ 1 món mặn');sfx('bad');return}S.stock[id]--;box.mains.push(id)}
   else{if(box.sides.length>=2){toast('Đủ topping');sfx('bad');return}if(box.sides.includes(id)){toast('Đã thêm rồi');sfx('bad');return}S.stock[id]--;box.sides.push(id)}
@@ -6496,31 +6557,40 @@ function doServe(){
   const expiredIds=usedExpiredInBox();
   if(expiredIds.length){
     const names=expiredIds.map(id=>INGREDIENTS[id]?.name||id).join(', ');
-    const fine=Math.min(800, Math.max(80, 60*expiredIds.length + 40*(S.soldToday||0)%5));
-    S.money=Math.max(0, Math.round((S.money-fine)*10)/10);
-    S.costToday=Math.round((S.costToday+fine)*10)/10;
-    S.rating=Math.max(1.5, S.rating-0.15);
+    // Nhắc nhẹ 50k + xóa sạch món hết hạn còn trong kho (không phạt nặng)
+    const fine=50;
+    const mon=Math.max(0, Math.round((Number(S.money)||0)*10)/10);
+    const take=Math.min(fine, mon);
+    if(take>0){
+      S.money=Math.round((mon-take)*10)/10;
+      S.costToday=Math.round(((S.costToday||0)+take)*10)/10;
+    }
+    S.rating=Math.max(1.5, (S.rating||4)-0.05);
     S.reviews++;
-    S.leftToday=(S.leftToday||0); // không + left, vẫn "bán" nhưng phạt
     S.reviewList.unshift({
       id:Date.now()+'_spoil'+Math.random().toString(36).slice(2,5),
-      name:cust.name,avatar:cust.avatar,food:1,staff:1,owner:1,
+      name:cust.name,avatar:cust.avatar,food:1,staff:2,owner:2,
       dish:MENU[cust.want]?.name||'Suất cơm',
-      comment:'Đồ ăn ôi thiu! Đau bụng quá, báo quản lý thị trường!',
-      avg:1,day:S.day,time:timeStr(S.gameMin),ownerReply:null,custReply:null,replied:false
+      comment:'Đồ hơi ôi… lần sau nhập hàng mới nhé!',
+      avg:1.5,day:S.day,time:timeStr(S.gameMin),ownerReply:null,custReply:null,replied:false
     });
     if(S.reviewList.length>40)S.reviewList.length=40;
-    // Xóa hàng hết hạn khỏi kho (đã dùng)
-    for(const id of expiredIds){
-      // đã trừ stock khi bỏ vào box; đánh dấu age
-      if((S.stock[id]||0)<=0)delete S.stockAge[id];
+    // Xóa sạch toàn bộ stock các món hết hạn (kể cả phần còn lại trong kho)
+    const purged=new Set(expiredIds);
+    for(const id of purged){
+      S.stock[id]=0;
+      if(S.stockAge)delete S.stockAge[id];
     }
-    toast('🤢 Khách đau bụng! Quản lý thị trường phạt '+fine+'k · '+names);
-    sfx('bad');
+    toast('🗑️ Món hết hạn đã bỏ'+(take>0?' · nhắc '+take+'k':'')+' · '+names+' — vào Kho nhập hàng mới');
+    sfx('click');
     stopCook();
     box={hasBox:false,hasRice:false,mains:[],sides:[],canh:null,sauce:0,mamTom:0};
-    const q=S._queue||[];tables[selectedTable]=q.length?makeCust(q.shift()):null;S._queue=q;
+    try{tables[selectedTable]=pullNextCust()}catch(e){
+      const q=S._queue||[];tables[selectedTable]=q.length?makeCust(q.shift()):null;S._queue=q;
+    }
+    try{fillEmptySeats()}catch(e){}
     const ni=tables.findIndex(t=>t);selectedTable=ni>=0?ni:0;
+    try{revalidateAllCustWants()}catch(e){}
     saveNow();
     updateSell();
     tryEndDay();
@@ -6653,7 +6723,7 @@ function doServe(){
     if(S.reviewList.length>40)S.reviewList.length=40;
     // đổ món (đã tốn nguyên liệu)
     stopCook();box={hasBox:false,hasRice:false,mains:[],sides:[],sauce:0,mamTom:0};
-    const q=S._queue||[];tables[selectedTable]=q.length?makeCust(q.shift()):null;S._queue=q;
+    tables[selectedTable]=null;try{fillEmptySeats()}catch(e){try{tables[selectedTable]=pullNextCust()}catch(e2){}}
     const ni=tables.findIndex(t=>t);selectedTable=ni>=0?ni:0;
     save();updateSell();
     tryEndDay();
@@ -6714,7 +6784,8 @@ function doServe(){
   if(cust.isOnline||cust.isShip){const st=ensureShipStats();st.online++;st.earn+=pay;}
   const custName=cust.name;
   stopCook();box={hasBox:false,hasRice:false,mains:[],sides:[],sauce:0,mamTom:0};
-  const q=S._queue||[];tables[selectedTable]=q.length?makeCust(q.shift()):null;S._queue=q;
+  tables[selectedTable]=null;
+  try{fillEmptySeats()}catch(e){try{tables[selectedTable]=pullNextCust()}catch(e2){}}
   const ni=tables.findIndex(t=>t);selectedTable=ni>=0?ni:0;
   save();updateSell();
   // sự kiện ngẫu nhiên (hiếm, tối đa 2/ngày)
@@ -8383,7 +8454,7 @@ function accrueDailyTax(){
       info.insp={fine,seize};
       S.rating=Math.max(1.5,(S.rating||4)-0.15);
       if(seize>0){
-        S.money=_r1(S.money-seize);T.due=_r1(T.due-seize);T.paid=_r1(T.paid+seize);
+        S.money=Math.max(0,_r1(S.money-seize));T.due=_r1(T.due-seize);T.paid=_r1(T.paid+seize);
         S.totalProfit=_r1((S.totalProfit||0)-seize);
         T.hist.unshift({day:S.day,amt:seize,type:'cuongche'});
       }
