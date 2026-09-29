@@ -1,0 +1,50 @@
+DANH SACH ANH ICON MON — dat file PNG canh index.html (dung ten)
+
+=== DA CO (khong can gui lai neu da co) ===
+thit-nuong.png / base64 ICON_THIT_NUONG
+thit-kho-trung.png / base64 ICON_THIT_KHO
+ga-kho-xa.png / base64 ICON_GA_KHO_XA
+com-trung-op-la.png
+trung-op-la.png
+tuong-ot.png
+
+=== MON COM (MENU) — can gui ===
+com-ca-kho.png          = Com ca kho
+com-thit-kho-tieu.png   = Com thit kho tieu
+com-cha-lua.png         = Com cha lua
+com-long-xao-dua.png    = Com long xao dua
+com-dau-hu-nhoi.png     = Com dau hu nhoi thit
+com-thit-xao-dua.png    = Com thit xao dua chua
+com-canh-chua.png       = Com canh chua ca
+com-long-xao-muop.png   = Com long xao muop
+com-thit-xao-mang.png   = Com thit xao mang
+com-cha-ca.png          = Com cha ca
+com-ca-kho-mang.png     = Com ca kho mang
+com-canh-kho-qua.png    = Com canh kho qua
+com-thit-kho-dau.png    = Com thit kho dau hu
+
+=== NGUYEN LIEU / TOPPING (KHO) — can gui ===
+ca-kho.png
+thit-kho-tieu.png
+cha-lua.png
+long-xao-dua.png
+dau-hu-nhoi.png
+thit-xao-dua.png
+canh-chua.png
+long-xao-muop.png
+thit-xao-mang.png
+cha-ca.png
+ca-kho-mang.png
+canh-kho-qua.png
+thit-kho-dau.png
+rau.png
+dua-leo.png
+ca-phao.png
+com-them.png
+mam-tom.png
+canh-thuong.png
+dia.png                 = Dia
+com.png                 = Gao / com nau san
+
+Goi y: anh vuong 128x128 hoac 256x256, PNG nen trong suot.
+Co the dung chung 1 anh cho ca MENU (com-xxx) va INGREDIENTS (xxx) neu giong nhau.
