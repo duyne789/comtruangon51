@@ -226,23 +226,48 @@
     .item-row .info{flex:1;min-width:0}
     .item-row .info .name{font-weight:700;font-size:13px}
     .item-row .info .desc{font-size:10px;color:var(--ink2);font-weight:600}
-    .item-row .ctrl{display:flex;align-items:center;gap:4px}
+    .item-row .ctrl{display:flex;align-items:center;gap:3px;flex-shrink:0}
     .item-row .ctrl button{
-      width:30px;height:30px;border-radius:10px;background:#FFF0F3;
-      font-size:15px;font-weight:800;display:flex;align-items:center;justify-content:center;
-      color:var(--pink-d);
+      min-width:28px;height:28px;padding:0 5px;border-radius:9px;background:#FFF0F3;
+      font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center;
+      color:var(--pink-d);border:none;font-family:inherit;
     }
     .item-row .ctrl button.plus{background:linear-gradient(180deg,#FF9BB5,#F7658A);color:#fff;box-shadow:0 2px 0 #E84A6F}
-    .item-row .ctrl .qty{min-width:26px;text-align:center;font-weight:800;font-size:13px;color:#E84A6F}
+    .item-row .ctrl button.plus10{background:linear-gradient(180deg,#FFB74D,#F57C00);color:#fff;box-shadow:0 2px 0 #E65100;font-size:10px}
+    .item-row .ctrl button.minus10{background:#FFE0B2;color:#E65100;font-size:10px}
+    .item-row .ctrl .qty{min-width:22px;text-align:center;font-weight:800;font-size:13px;color:#E84A6F}
     .hint{font-size:11px;color:var(--ink2);margin:6px 0 8px;font-weight:600}
-    .bottom-cta{position:absolute;bottom:0;left:0;right:0;padding:10px 14px 16px;background:linear-gradient(transparent,var(--cream) 25%);z-index:10}
-    .bottom-cta button{
-      width:100%;padding:14px;border-radius:18px;font-family:var(--fd);font-size:15px;font-weight:700;
-      background:linear-gradient(180deg,#FF9BB5,#F7658A);color:#fff;
-      box-shadow:0 5px 0 #E84A6F,0 8px 20px rgba(247,101,138,.3);
+    .bottom-cta{
+      position:absolute;bottom:0;left:0;right:0;z-index:10;
+      padding:8px 12px max(12px, env(safe-area-inset-bottom));
+      padding-right:68px; /* chừa chỗ nút chat */
+      background:linear-gradient(180deg,transparent 0%,var(--cream) 28%);
+      display:flex;flex-direction:column;gap:6px;
     }
-    .bottom-cta button:active{transform:translateY(2px);box-shadow:0 3px 0 #E84A6F}
-    .bottom-cta .note{text-align:center;font-size:10px;color:var(--ink2);margin-top:6px;font-weight:600}
+    .bottom-cta .cta-row{display:flex;gap:8px;align-items:stretch}
+    .bottom-cta button{
+      width:100%;padding:12px 10px;border-radius:16px;font-family:var(--fd);font-size:14px;font-weight:700;
+      background:linear-gradient(180deg,#FF9BB5,#F7658A);color:#fff;border:none;
+      box-shadow:0 4px 0 #E84A6F,0 6px 16px rgba(247,101,138,.28);
+    }
+    .bottom-cta button:active{transform:translateY(2px);box-shadow:0 2px 0 #E84A6F}
+    .bottom-cta button:disabled{opacity:.45;box-shadow:none}
+    .bottom-cta .btn-ghost-cta{
+      background:#fff!important;color:#E84A6F!important;
+      border:2px solid #FFB7C5!important;box-shadow:none!important;
+      font-size:13px;padding:10px 12px;flex:0 0 auto;min-width:88px;width:auto;
+    }
+    .bottom-cta .btn-ghost-cta:active{background:#FFF5F7!important}
+    .bottom-cta #btn-buy{flex:1}
+    .bottom-cta #btn-go{
+      background:linear-gradient(180deg,#66BB6A,#43A047)!important;
+      box-shadow:0 4px 0 #2E7D32,0 6px 16px rgba(67,160,71,.3)!important;
+    }
+    .bottom-cta #btn-go:active{box-shadow:0 2px 0 #2E7D32!important}
+    .bottom-cta .note{text-align:center;font-size:10px;color:var(--ink2);margin-top:2px;font-weight:600}
+    /* panel kho chừa đáy cho CTA */
+    #panel.kho-pad{padding-bottom:130px}
+
     .price-tag{display:inline-block;font-size:9px;font-weight:800;padding:2px 7px;border-radius:99px;margin-top:3px}
     .price-ok{background:#E8F5E9;color:#2E7D32}
     .price-low{background:#E3F2FD;color:#1565C0}
@@ -1724,6 +1749,11 @@
     .tax-pay-mini{display:block;width:100%;margin-top:8px;padding:9px;border:none;border-radius:10px;font-weight:800;background:linear-gradient(180deg,#546E7A,#37474F);color:#FFD54F}
     body.dark .tax-alert{background:#3a2c14;color:#ffe0b2}body.dark .tax-alert.bad{background:#3a1616;color:#ffcdd2}body.dark .tax-alert.ok{background:#16301a;color:#c8e6c9}
     body.dark .tax-rules{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.15)}
+  
+    .item-row .ctrl button{touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+    .bottom-cta button{touch-action:manipulation}
+    #panel{overflow-y:auto;-webkit-overflow-scrolling:touch}
+
   </style>
 </head>
 <body>
@@ -2876,30 +2906,30 @@ const CROWD_CFG={
 const DIFF={
   de:{
     label:'Dễ',emoji:'🍀',
-    drainMul:0.85, qtyMul:0.9, tipMul:1.2,
-    priceTol:1.4,
-    leaveRating:0.025, wrongPatience:16,
-    startPat:75, eventMul:0.4, maxEvents:1, negBias:0.5,
-    sideChance:0.25, sauceChance:0.18, mamChance:0.12,
-    cookSpeed:1.15,
-    desc:'Ít sự kiện · khách kiên nhẫn'
+    drainMul:0.50, qtyMul:0.9, tipMul:1.25,
+    priceTol:1.45,
+    leaveRating:0.02, wrongPatience:10,
+    startPat:92, eventMul:0.35, maxEvents:1, negBias:0.4,
+    sideChance:0.22, sauceChance:0.15, mamChance:0.10,
+    cookSpeed:1.2,
+    desc:'Ít sự kiện · khách rất kiên nhẫn'
   },
   binh:{
     label:'Bình thường',emoji:'⛅',
-    drainMul:1.15, qtyMul:1.05, tipMul:1.0,
-    priceTol:1.33,
-    leaveRating:0.05, wrongPatience:24,
-    startPat:62, eventMul:1.0, maxEvents:2, negBias:1.0,
-    sideChance:0.4, sauceChance:0.3, mamChance:0.22,
-    cookSpeed:1.0,
-    desc:'Cân bằng · sự kiện vừa phải'
+    drainMul:0.75, qtyMul:1.0, tipMul:1.05,
+    priceTol:1.35,
+    leaveRating:0.04, wrongPatience:16,
+    startPat:80, eventMul:0.85, maxEvents:2, negBias:0.85,
+    sideChance:0.35, sauceChance:0.28, mamChance:0.18,
+    cookSpeed:1.05,
+    desc:'Cân bằng · khách kiên nhẫn hơn'
   },
   kho:{
     label:'Khó',emoji:'🔥',
-    drainMul:1.65, qtyMul:1.25, tipMul:0.85,
+    drainMul:1.45, qtyMul:1.25, tipMul:0.85,
     priceTol:1.28,
     leaveRating:0.09, wrongPatience:34,
-    startPat:48, eventMul:1.9, maxEvents:4, negBias:1.4,
+    startPat:52, eventMul:1.9, maxEvents:4, negBias:1.4,
     sideChance:0.55, sauceChance:0.42, mamChance:0.32,
     cookSpeed:0.9,
     desc:'Nhiều sự kiện · khách sốt · order phức tạp'
@@ -3233,8 +3263,11 @@ function tryClaimWeekQuests(){
 /* ===== THUÊ MẶT BẰNG (cân bằng kinh tế) ===== */
 function dailyRent(){
   const lv=shopLevel().id||1;
-  // thuê tăng theo cấp & ngày — chặn snowball
-  return Math.min(400, 15 + lv*12 + Math.floor((S.day||1)*1.5));
+  const day=S.day||1;
+  // Ngày 1–3 thuê rất nhẹ để không âm tiền sớm
+  if(day<=3)return Math.max(5, 8 + lv*4);
+  if(day<=7)return Math.min(80, 12 + lv*8 + Math.floor(day*1.2));
+  return Math.min(350, 15 + lv*12 + Math.floor(day*1.4));
 }
 
 /* ===== LOGO BUFF ===== */
@@ -4782,14 +4815,20 @@ function renderPrep(){
   const hasPending=Object.values(S.pending||{}).some(v=>v>0);
   const hasStock=hasAnyStock();
   app.innerHTML=`${renderTop(false)}${renderTabs(tab)}<main id="view"><div class="panel" id="panel"></div></main>
-    ${tab==='kho'?`<div class="bottom-cta">
-      ${hasPending?`<button id="btn-buy">Nhập hàng · ${calcBuyCost()}k</button>
-      <button id="btn-cancel-buy" type="button" class="btn-ghost-cta">Hủy nhập hàng</button>`:''}
-      <button id="btn-go" style="margin-top:${hasPending?'8px':'0'}">🚪 Mở cửa ngày ${S.day}</button>
+    ${tab==='kho'?`<div class="bottom-cta" id="kho-cta">
+      <div class="cta-row">
+        <button id="btn-cancel-buy" type="button" class="btn-ghost-cta" style="${hasPending?'':'display:none'}">Hủy</button>
+        <button type="button" id="btn-buy" ${hasPending?'':'disabled'}>Nhập hàng · ${calcBuyCost()}k</button>
+      </div>
+      <button type="button" id="btn-go">🚪 Mở cửa ngày ${S.day}</button>
     </div>`:''}`;
   bindTop();
   document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{sfx('click');S.tab=b.dataset.tab;save();render()});
   renderPanel(tab);
+  try{
+    const panel=document.getElementById('panel');
+    if(panel)panel.classList.toggle('kho-pad', tab==='kho');
+  }catch(e){}
   document.getElementById('btn-buy')?.addEventListener('click',doBuyOnly);
   document.getElementById('btn-cancel-buy')?.addEventListener('click',()=>{
     sfx('click');S.pending={};save();toast('Đã hủy nhập hàng');render();
@@ -4844,19 +4883,47 @@ function renderKho(){
       }else if(life&&life<90)hsd=' · để được '+life+' ngày';
       h+=`<div class="item-row" data-id="${id}"><div class="icon">${iconHTML(it.icon,32)}</div>
         <div class="info"><div class="name">${it.name}</div><div class="desc">${(()=>{const bc=ingBuyCost(id);const raw=it.cost;return (bc<raw?'<span style="color:#2E7D32;font-weight:800">'+bc+'k</span> <s style="opacity:.5">'+raw+'k</s>':bc+'k')})()} · Còn ${have}${hsd}</div></div>
-        <div class="ctrl"><button type="button" class="minus">−</button><span class="qty">${pend}</span><button type="button" class="plus">+</button></div></div>`;
+        <div class="ctrl">
+          <button type="button" class="minus10" title="-10">−10</button>
+          <button type="button" class="minus" title="-5">−</button>
+          <span class="qty">${pend}</span>
+          <button type="button" class="plus" title="+5">+</button>
+          <button type="button" class="plus10" title="+10">+10</button>
+        </div></div>`;
     }
   }
   return h;
 }
 function bindKho(){
   document.querySelectorAll('[data-kcat]').forEach(b=>{
-    b.onclick=()=>{sfx('click');khoCat=b.dataset.kcat;render();};
+    b.onclick=()=>{
+      sfx('click');
+      khoCat=b.dataset.kcat;
+      // Chỉ đổi panel kho — không render full app (tránh nhảy lên đầu)
+      const panel=document.getElementById('panel');
+      if(panel&&S.tab==='kho'){
+        panel.innerHTML=renderKho();
+        bindKho();
+        updBuyBtn();
+      }else render();
+    };
   });
   document.querySelectorAll('.item-row[data-id]').forEach(row=>{
     const id=row.dataset.id;
-    row.querySelector('.plus').onclick=e=>{e.preventDefault();sfx('add');S.pending[id]=(S.pending[id]||0)+5;row.querySelector('.qty').textContent=S.pending[id];updBuyBtn();save()};
-    row.querySelector('.minus').onclick=e=>{e.preventDefault();sfx('click');S.pending[id]=Math.max(0,(S.pending[id]||0)-5);row.querySelector('.qty').textContent=S.pending[id];updBuyBtn();save()};
+    const setQty=(delta)=>{
+      S.pending[id]=Math.max(0,(S.pending[id]||0)+delta);
+      if(!S.pending[id])delete S.pending[id];
+      row.querySelector('.qty').textContent=S.pending[id]||0;
+      updBuyBtn();save();
+    };
+    const plus=row.querySelector('.plus');
+    const minus=row.querySelector('.minus');
+    const plus10=row.querySelector('.plus10');
+    const minus10=row.querySelector('.minus10');
+    if(plus)plus.onclick=e=>{e.preventDefault();e.stopPropagation();sfx('add');setQty(5)};
+    if(minus)minus.onclick=e=>{e.preventDefault();e.stopPropagation();sfx('click');setQty(-5)};
+    if(plus10)plus10.onclick=e=>{e.preventDefault();e.stopPropagation();sfx('add');setQty(10)};
+    if(minus10)minus10.onclick=e=>{e.preventDefault();e.stopPropagation();sfx('click');setQty(-10)};
   });
   document.getElementById('btn-wq')?.addEventListener('click',()=>{sfx('click');showWeekQuests()});
   document.getElementById('btn-sg')?.addEventListener('click',()=>{
@@ -4920,11 +4987,16 @@ function bindKho(){
   });
 }
 function updBuyBtn(){
-  // re-render bottom area lightly via full prep if on kho - keep simple
   const cost=calcBuyCost();
+  const has=cost>0;
   const buy=document.getElementById('btn-buy');
-  if(buy)buy.textContent=`Nhập hàng · ${cost}k`;
-  else if(cost>0)render(); // show buy button when pending appears
+  const cancel=document.getElementById('btn-cancel-buy');
+  if(buy){
+    buy.disabled=!has;
+    buy.style.opacity=has?'1':'0.5';
+    buy.textContent='Nhập hàng · '+cost+'k';
+  }
+  if(cancel)cancel.style.display=has?'':'none';
 }
 
 function doBuyOnly(){
@@ -5029,8 +5101,10 @@ function startHaggle(baseCost){
 }
 
 function finishBuy(baseCost,finalCost){
-  if(finalCost>S.money){toast('Không đủ tiền! Vào tab Ngân hàng vay nhé');sfx('bad');return}
-  S.money-=finalCost;S.costToday+=finalCost;
+  const mon=Math.round((Number(S.money)||0)*10)/10;
+  const need=Math.round((Number(finalCost)||0)*10)/10;
+  if(need>mon+0.05){toast('Không đủ tiền! Có '+moneyStr(mon)+' — cần '+moneyStr(need)+'. Vào Ngân hàng vay rồi nhập lại.');sfx('bad');return}
+  S.money=Math.round((mon-need)*10)/10;S.costToday=Math.round(((S.costToday||0)+need)*10)/10;
   for(const[k,v] of Object.entries(S.pending||{})){S.stock[k]=(S.stock[k]||0)+v;if(v>0)markStockIn(k,v)}
   S.pending={};
   sfx('buy');
@@ -5044,8 +5118,9 @@ function doStartSell(){
   let cost=0;for(const[k,v] of Object.entries(S.pending||{}))cost+=ingBuyCost(k)*v;
   cost=Math.round(cost*10)/10;
   if(cost>0){
-    if(cost>S.money){toast('Không đủ tiền nhập hàng!');sfx('bad');return}
-    S.money-=cost;S.costToday+=cost;
+    const mon=Math.round((Number(S.money)||0)*10)/10;
+    if(cost>mon+0.05){toast('Không đủ tiền nhập hàng! Có '+moneyStr(mon)+' — cần '+moneyStr(cost));sfx('bad');return}
+    S.money=Math.round((mon-cost)*10)/10;S.costToday=Math.round(((S.costToday||0)+cost)*10)/10;
     for(const[k,v] of Object.entries(S.pending)){S.stock[k]=(S.stock[k]||0)+v;if(v>0)markStockIn(k,v)}
     S.pending={};sfx('buy');
   }
@@ -5142,100 +5217,146 @@ function makeCust(c){
   // Suất cơm luôn có canh (không cần order thêm canh)
   const wantCanh=true;
   const cfg=CROWD_CFG[S.crowd]||CROWD_CFG.lairai;
-  let drain=1.05+(S.day*0.06)-((S.upgrades.ghe||0)*0.07)-((S.upgrades.phuc_vu||0)*0.05)+(cfg.drain||0);
-  if(S.upgrades.wifi)drain-=0.07;
+  // Base drain nhẹ hơn — chế độ Dễ/Bình tăng startPat + giảm drainMul
+  let drain=0.72+(S.day*0.035)-((S.upgrades.ghe||0)*0.08)-((S.upgrades.phuc_vu||0)*0.06)+(cfg.drain||0);
+  if(S.upgrades.wifi)drain-=0.08;
   if(S.upgrades.quat)drain-=0.1;
   drain*=(d.drainMul||1);
-  const start=Math.max(35,Math.min(85,d.startPat!=null?d.startPat:65));
-  const drain2=Math.max(0.5,Math.min(2.8,drain+(c.isOnline||c.isShip?0.15:0)));
+  // áp dụng patienceTick của đám đông (vang chậm hơn)
+  drain*=(cfg.patienceTick||1);
+  const start=Math.max(40,Math.min(98,d.startPat!=null?d.startPat:70));
+  const drain2=Math.max(0.28,Math.min(2.2,drain+(c.isOnline||c.isShip?0.12:0)));
   return {...c,extraSide,wantMam,wantCanh,isOnline:!!c.isOnline,isShip:!!(c.isShip||c.isOnline),patience:start,maxPatience:start,drain:drain2};
 }
 
 function canOrderMenu(mid){
   const m=MENU[mid];if(!m||!isMenuUnlocked(mid))return false;
-  // Chỉ kiểm tra NGUYÊN LIỆU CỦA MÓN NÀY — hết món A vẫn order được món B
+  // Gạo dùng chung — hết gạo = không order được suất nào
   if(stockOf('gao')<=0||isIngExpired('gao'))return false;
   for(const n of (m.need||[])){
-    if(n==='hop')continue;
+    if(n==='hop')continue; // đĩa không chặn order
     if(stockOf(n)<=0||isIngExpired(n))return false;
   }
   return true;
 }
-function hasAnyOrderableMenu(){
-  return Object.keys(MENU).some(canOrderMenu);
+function listOrderableMenus(){
+  return Object.keys(MENU).filter(canOrderMenu);
 }
-/** Còn ít nhất 1 món order được không */
+function hasAnyOrderableMenu(){return listOrderableMenus().length>0}
+function hasOrderableMenu(){return hasAnyOrderableMenu()}
 
-/** Hết món → đổi order hoặc khách bỏ về */
+/** Nhóm món theo nguyên liệu chính — đổi món ưu tiên cùng nhóm */
+function menuMainIng(mid){
+  const need=(MENU[mid]&&MENU[mid].need)||[];
+  return need.find(n=>n!=='hop'&&n!=='gao')||null;
+}
+function menuFamily(mid){
+  const ing=menuMainIng(mid)||'';
+  if(/thit|suon|ga|long|cha_lua|dau_hu/.test(ing))return 'man';
+  if(/ca|cha_ca/.test(ing))return 'ca';
+  if(/canh|kho_qua/.test(ing))return 'canh';
+  if(/trung/.test(ing))return 'trung';
+  return 'khac';
+}
+
+/**
+ * Chọn món thay thế thông minh:
+ * 1) prefer của khách còn hàng
+ * 2) cùng "họ" món (mặn/cá/canh…)
+ * 3) bất kỳ món còn hàng
+ */
+function pickAvailableWant(prefer, oldWant){
+  const avail=listOrderableMenus();
+  if(!avail.length)return null;
+  const pref=(prefer||[]).filter(p=>avail.includes(p));
+  if(pref.length)return pref[Math.floor(Math.random()*pref.length)];
+  if(oldWant){
+    const fam=menuFamily(oldWant);
+    const same=avail.filter(p=>menuFamily(p)===fam);
+    if(same.length)return same[Math.floor(Math.random()*same.length)];
+  }
+  return avail[Math.floor(Math.random()*avail.length)];
+}
+
+/** Gán lại order; trả về id món mới hoặc null nếu hết sạch */
+function refreshCustWant(cust){
+  if(!cust)return null;
+  if(cust.want&&canOrderMenu(cust.want))return cust.want;
+  const prefer=(cust.prefer||[]).filter(p=>MENU[p]&&isMenuUnlocked(p));
+  const w=pickAvailableWant(prefer, cust.want);
+  if(w){
+    cust.want=w;
+    // Đổi món → +kiên nhẫn nhẹ (không bị “hụt” rồi bỏ về ngay)
+    if(cust.patience!=null&&cust.maxPatience!=null){
+      cust.patience=Math.min(cust.maxPatience, cust.patience+10);
+    }
+    return w;
+  }
+  cust.want=null;
+  return null;
+}
+
+let _wantToastAt=0;
+function toastWantSwitch(switched, left, sample){
+  const now=Date.now();
+  if(now-_wantToastAt<2200)return; // chống spam
+  _wantToastAt=now;
+  if(switched===1&&sample)toast('🔄 Đổi order: '+sample);
+  else if(switched>1)toast('🔄 '+switched+' khách đổi sang món còn hàng');
+  if(left>0)toast(left+' khách bỏ về — hết sạch mọi món'+(stockOf('gao')<=0?' (hết gạo)':''));
+}
+
+/** Đánh dấu cần quét lại order (gọi khi kho thay đổi) */
+function markWantsDirty(){S._wantsDirty=true}
+
+/**
+ * Hết 1 món → đổi order. Chỉ bỏ về khi hết SẠCH.
+ * Gọi khi: kho đổi / dirty flag / sau giao món.
+ */
 function revalidateAllCustWants(){
-  if(!tables||!tables.length){
-    // vẫn lọc queue
-  }else{
-    let changed=false, switched=0, left=0;
-    const anyLeft=hasAnyOrderableMenu();
+  S._wantsDirty=false;
+  const avail=listOrderableMenus();
+  const any=avail.length>0;
+  let switched=0, left=0, sample='';
+  let changed=false;
+
+  if(tables&&tables.length){
     for(let i=0;i<tables.length;i++){
       const cust=tables[i];
-      if(!cust||!cust.want)continue;
-      if(canOrderMenu(cust.want))continue;
-      // Món đang order hết → đổi sang món khác còn hàng
+      if(!cust)continue;
+      if(cust.want&&canOrderMenu(cust.want))continue;
+      const oldName=cust.want?(MENU[cust.want]?.name||cust.want):'';
       const nw=refreshCustWant(cust);
       if(nw){
-        switched++;
-        changed=true;
-      }else if(!anyLeft){
-        // Chỉ bỏ về khi THẬT SỰ hết sạch mọi món
-        left++;
-        S.leftToday=(S.leftToday||0)+1;
-        tables[i]=null;
-        changed=true;
+        switched++;changed=true;
+        if(!sample)sample=(oldName?oldName+' → ':'')+(MENU[nw]?.name||nw);
+      }else if(!any){
+        left++;S.leftToday=(S.leftToday||0)+1;tables[i]=null;changed=true;
       }else{
-        // còn món khác nhưng prefer fail — thử lại all menu
-        const w2=pickAvailableWant(Object.keys(MENU));
-        if(w2){cust.want=w2;switched++;changed=true}
-        else{
-          left++;S.leftToday=(S.leftToday||0)+1;tables[i]=null;changed=true;
-        }
+        // avail còn nhưng prefer miss — gán trực tiếp từ cache
+        const pick=avail[Math.floor(Math.random()*avail.length)];
+        cust.want=pick;
+        if(cust.patience!=null&&cust.maxPatience!=null)
+          cust.patience=Math.min(cust.maxPatience,cust.patience+10);
+        switched++;changed=true;
+        if(!sample)sample=(oldName?oldName+' → ':'')+(MENU[pick]?.name||pick);
       }
     }
-    if(switched===1)toast('Khách đổi order → món còn hàng');
-    else if(switched>1)toast(switched+' khách đổi sang món còn hàng');
-    if(left>0)toast(left+' khách bỏ về vì hết sạch món');
     if(changed){
       const ni=tables.findIndex(t=>t);selectedTable=ni>=0?ni:0;
     }
   }
+
   if(S._queue&&S._queue.length){
     S._queue=S._queue.filter(c=>{
       if(!c)return false;
       if(c.want&&canOrderMenu(c.want))return true;
-      const w=pickAvailableWant((c.prefer||[]).filter(p=>MENU[p]&&isMenuUnlocked(p)))
-        || pickAvailableWant(Object.keys(MENU));
-      if(w){c.want=w;return true}
-      return false; // hết sạch mới bỏ khỏi hàng chờ
+      return !!refreshCustWant(c);
     });
   }
-}
 
-function hasOrderableMenu(){
-  return Object.keys(MENU).some(canOrderMenu);
-}
-function pickAvailableWant(prefer){
-  const list=(prefer||[]).filter(p=>canOrderMenu(p));
-  if(list.length)return list[Math.floor(Math.random()*list.length)];
-  // fallback: bất kỳ món còn hàng
-  const all=Object.keys(MENU).filter(canOrderMenu);
-  if(all.length)return all[Math.floor(Math.random()*all.length)];
-  return null; // hết sạch món — không gán order ảo
-}
-/** Gán lại order cho khách theo kho hiện tại; null = hết món */
-function refreshCustWant(cust){
-  if(!cust)return null;
-  const prefer=(cust.prefer||[]).filter(p=>MENU[p]&&isMenuUnlocked(p));
-  let w=pickAvailableWant(prefer);
-  if(!w)w=pickAvailableWant(Object.keys(MENU)); // món khác bất kỳ còn hàng
-  if(w){cust.want=w;return w}
-  cust.want=null;
-  return null;
+  if(switched||left)toastWantSwitch(switched,left,sample);
+  return {switched,left,changed};
 }
 
 function generateQueue(){
@@ -5786,6 +5907,15 @@ function startPatienceLoop(){
   patienceTimer=setInterval(()=>{
     if(S.phase!=='sell'||paused)return;
     let changed=false;
+    // Chỉ quét khi kho vừa đổi (dirty) hoặc phát hiện order hết hàng
+    try{
+      if(S._wantsDirty){revalidateAllCustWants()}
+      else{
+        for(const t of (tables||[])){
+          if(t&&t.want&&!canOrderMenu(t.want)){revalidateAllCustWants();break}
+        }
+      }
+    }catch(e){}
     const seatsRoot=document.getElementById('seats');
     tables.forEach((t,i)=>{
       if(!t)return;
@@ -5805,10 +5935,11 @@ function startPatienceLoop(){
           if(!raw)continue;
           let mc=(raw.patience!=null)?raw:makeCust(raw);
           if(!mc)continue;
-          if(mc.want&&!canOrderMenu(mc.want)){
-            if(!refreshCustWant(mc)){S.leftToday=(S.leftToday||0)+1;continue}
+          // Luôn đảm bảo món còn hàng — hết prefer thì lấy món khác
+          if(!mc.want||!canOrderMenu(mc.want)){
+            if(!refreshCustWant(mc)){continue} // không tính leftToday oan — chỉ bỏ khách này
           }
-          if(mc.want)next=mc;
+          if(mc.want&&canOrderMenu(mc.want))next=mc;
         }
         tables[i]=next;S._queue=q;changed=true;
       }
@@ -6231,7 +6362,7 @@ function doAddTop(id){
   else{if(box.sides.length>=2){toast('Đủ topping');sfx('bad');return}if(box.sides.includes(id)){toast('Đã thêm rồi');sfx('bad');return}S.stock[id]--;box.sides.push(id)}
   if(role==='main')applyQuayHelp(tables[selectedTable]);
   sfx('add');saveDebounced();
-  try{if(stockOf(id)<=0)revalidateAllCustWants()}catch(e){}
+  try{revalidateAllCustWants()}catch(e){}
   updateSell();advanceCookGuide(role==='main'?'main':'side');
   tryAutoServe();
 }
@@ -8191,9 +8322,10 @@ function bindBank(){
     const interest=Math.round(amt*0.4*10)/10;
     const total=amt+interest;
     const daily=Math.round((total/days)*10)/10;
-    S.money+=amt;
-    S.loan={principal:amt,remaining:total,dailyPay:daily,daysLeft:days,totalInterest:interest};
-    sfx('buy');toast(`Đã vay ${moneyStr(amt)} · Lãi ${moneyStr(interest)}`);
+    S.money=Math.round(((Number(S.money)||0)+amt)*10)/10;
+    S.loan={principal:amt,remaining:total,dailyPay:daily,daysLeft:days,totalInterest:interest,source:'bank'};
+    sfx('buy');toast(`Đã vay +${moneyStr(amt)} → két ${moneyStr(S.money)} · lãi ${moneyStr(interest)}`);
+    try{refreshKetUI()}catch(e){}
     save();render();
   });
   document.getElementById('btn-repay-all')?.addEventListener('click',()=>{
@@ -8753,10 +8885,12 @@ function renderEnd(){
   for(const u of UPGRADES){
     if(u.wage&&(S.upgrades[u.id]||0)>0)wage+=u.wage*(S.upgrades[u.id]||1);
   }
-  if(wage>0){S.money-=wage;S.costToday+=wage}
-  // thuê mặt bằng (cân bằng)
+  if(wage>0){S.money=Math.round((S.money-wage)*10)/10;S.costToday=Math.round((S.costToday+wage)*10)/10}
+  // thuê mặt bằng (nhẹ ngày đầu)
   const rent=dailyRent();
   if(rent>0){S.money=Math.round((S.money-rent)*10)/10;S.costToday=Math.round((S.costToday+rent)*10)/10}
+  // Ngày 1–2: không để két âm vì thuê/lương (tránh phá sản oan)
+  if((S.day||1)<=2 && S.money<0){S.money=0}
   // week stats
   try{
     bumpWeekStat('left', S.leftToday||0);
