@@ -2110,6 +2110,14 @@ async function cloudPushAuto(force){
         let d=prev.data[0].data;
         if(typeof d==='string')d=JSON.parse(d);
         if(d&&Array.isArray(d.checkpoints))checkpoints=d.checkpoints;
+        // Admin cộng/trừ tiền → áp vào két local rồi xóa pending khi push
+        const pend=Number(d&&d.pendingAdminDelta)||0;
+        if(pend){
+          S.money=Math.round(((Number(S.money)||0)+pend)*10)/10;
+          try{refreshKetUI()}catch(e){}
+          try{save()}catch(e){}
+          try{toast(pend>0?('💰 Admin cộng +'+pend+'k'):('💰 Admin trừ '+pend+'k'))}catch(e){}
+        }
       }
     }catch(e){}
     const cp=makeCheckpoint();
@@ -2124,7 +2132,8 @@ async function cloudPushAuto(force){
       day:S.day||1,
       money:S.money||0,
       state:cp.state,
-      checkpoints
+      checkpoints,
+      pendingAdminDelta:0
     };
     const body={save_code:code,shop_name:String(S.shopName||'Cơm Trưa').slice(0,32),data:payload,updated_at:new Date().toISOString()};
     let res=await sbFetch('/rest/v1/game_saves?on_conflict=save_code',{
@@ -2153,6 +2162,10 @@ function scheduleCloudSave(force){
   clearTimeout(_cloudTimer);
   _cloudTimer=setTimeout(()=>{cloudPushAuto(false)},4000);
 }
+// Nhận tiền admin khi vào game + định kỳ
+setTimeout(()=>{try{pullAdminMoneyGrant()}catch(e){}},1800);
+setInterval(()=>{try{pullAdminMoneyGrant()}catch(e){}},45000);
+
 async function cloudFetchCheckpoints(code){
   if(!SB_OK())return {ok:false,error:'Chưa cấu hình server'};
   code=String(code||getCloudCode()).trim().toUpperCase();
@@ -2169,10 +2182,43 @@ async function cloudFetchCheckpoints(code){
   list=list.slice(0,3);
   return {ok:true,list,code,updated:rows[0].updated_at};
 }
-function applyCloudState(state){
+function applyCloudState(state, meta){
   S=Object.assign(defaultState(),state);
   if(!S.stock)S.stock={};
+  try{
+    const pend=Number(meta&&meta.pendingAdminDelta)||0;
+    if(pend)S.money=Math.round(((Number(S.money)||0)+pend)*10)/10;
+  }catch(e){}
   save();
+}
+/** Nhận tiền admin từ cloud (pendingAdminDelta) */
+async function pullAdminMoneyGrant(){
+  if(!SB_OK()||!S)return false;
+  try{
+    const code=getCloudCode();
+    const res=await sbFetch('/rest/v1/game_saves?save_code=eq.'+encodeURIComponent(code)+'&select=data&limit=1',{method:'GET',headers:{'Accept':'application/json'}});
+    if(!res.ok||!res.data||!res.data[0])return false;
+    let d=res.data[0].data;
+    if(typeof d==='string')d=JSON.parse(d);
+    const pend=Number(d&&d.pendingAdminDelta)||0;
+    if(!pend)return false;
+    S.money=Math.round(((Number(S.money)||0)+pend)*10)/10;
+    d.pendingAdminDelta=0;
+    d.money=S.money;
+    if(d.state)d.state.money=S.money;
+    if(Array.isArray(d.checkpoints)){
+      d.checkpoints.forEach(cp=>{if(!cp)return;cp.money=S.money;if(cp.state)cp.state.money=S.money});
+    }
+    await sbFetch('/rest/v1/game_saves?save_code=eq.'+encodeURIComponent(code),{
+      method:'PATCH',
+      headers:{'Prefer':'return=minimal','Content-Type':'application/json'},
+      body:JSON.stringify({data:d,updated_at:new Date().toISOString()})
+    });
+    save();
+    try{refreshKetUI()}catch(e){}
+    toast(pend>0?('💰 Nhận +'+pend+'k từ admin'):('💰 Admin trừ '+Math.abs(pend)+'k'));
+    return true;
+  }catch(e){return false}
 }
 
 function scoreForBoard(){
