@@ -1946,13 +1946,27 @@ async function trackVisitSilent(){
     if(Date.now()-last<6*3600*1000)return;
     localStorage.setItem(k,String(Date.now()));
   }catch(e){}
-  await sbFetch('/rest/v1/rpc/bump_daily_visit', {
-    method:'POST',
-    body: JSON.stringify({
-      p_shop: (S&&S.shopName)||null,
-      p_diff: (S&&S.diff)||null
-    })
-  });
+  try{
+    await sbFetch('/rest/v1/rpc/bump_daily_visit', {
+      method:'POST',
+      body: JSON.stringify({
+        p_shop: (S&&S.shopName)||null,
+        p_diff: (S&&S.diff)||null
+      })
+    });
+  }catch(e){}
+  try{
+    const d=new Date();
+    const day=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+    const cur=await sbFetch('/rest/v1/daily_visits?day=eq.'+day+'&select=visits');
+    let v=1;
+    if(cur.ok&&Array.isArray(cur.data)&&cur.data[0])v=(+cur.data[0].visits||0)+1;
+    await sbFetch('/rest/v1/daily_visits?on_conflict=day',{
+      method:'POST',
+      headers:{'Prefer':'resolution=merge-duplicates,return=minimal','Content-Type':'application/json'},
+      body:JSON.stringify({day,visits:v})
+    });
+  }catch(e){}
 }
 
 async function fetchLeaderboard(limit=50){
@@ -4112,31 +4126,36 @@ function maybeBaoKe(){
 function showBaoKe(){
   if(S.phase!=='prep')return;
   modal.hidden=false;
-  const canPay=S.money>=250;
+  const mon=Math.max(0, Math.round((Number(S.money)||0)*10)/10);
+  // Đóng 40% két hiện có (tối thiểu 0)
+  const fee=Math.round(mon*0.4*10)/10;
+  const canPay=mon>0&&fee>0;
+  const feeStr=moneyStr(fee);
   modal.innerHTML=`<div class="box" style="text-align:center">
     <div style="font-size:48px">🕶️</div>
     <h2>Đại ca bảo kê!</h2>
     <p style="font-size:13px;color:var(--ink2);margin:8px 0 14px;line-height:1.5">
       Một gã giang hồ bước vào quán:<br>
-      <i>"Quán này muốn yên ổn thì nộp <b style="color:#E84A6F">250k</b> bảo kê."</i>
+      <i>"Quán này muốn yên ổn thì nộp <b style="color:#E84A6F">40% két</b> bảo kê<br>(= <b style="color:#E84A6F">${feeStr}</b>)."</i>
     </p>
-    <p style="font-size:12px;color:var(--ink2);margin:0 0 10px">Két hiện có: <b>${moneyStr(S.money)}</b></p>
-    <button class="menu-btn primary" id="bk-pay" ${canPay?'':'disabled style="opacity:.4;pointer-events:none"'}>💰 Đóng 250k bảo kê</button>
-    ${!canPay?'<p style="font-size:11px;color:#E84A6F;margin:4px 0 8px">Không đủ tiền đóng bảo kê</p>':''}
+    <p style="font-size:12px;color:var(--ink2);margin:0 0 10px">Két hiện có: <b>${moneyStr(mon)}</b> · Bảo kê: <b style="color:#E84A6F">${feeStr}</b></p>
+    <button class="menu-btn primary" id="bk-pay" ${canPay?'':'disabled style="opacity:.4;pointer-events:none"'}>💰 Đóng ${feeStr} bảo kê (40%)</button>
+    ${!canPay?'<p style="font-size:11px;color:#E84A6F;margin:4px 0 8px">Két trống — không thu được</p>':''}
     <button class="menu-btn" id="bk-scold" style="background:linear-gradient(135deg,#FF8A65,#FF7043);color:#fff">🤬 Chửi cho một trận</button>
     <button class="menu-btn danger" id="bk-kick">😤 Đuổi hắn ra</button>
   </div>`;
   document.getElementById('bk-pay').onclick=()=>{
-    if(S.money<250){toast('Không đủ 250k!');sfx('bad');showBaoKe();return}
-    S.money=Math.round((S.money-250)*10)/10;
-    S.costToday=Math.round((S.costToday+250)*10)/10;
+    const m=Math.max(0, Math.round((Number(S.money)||0)*10)/10);
+    const take=Math.round(m*0.4*10)/10;
+    if(take<=0){toast('Két trống!');sfx('bad');modal.hidden=true;return}
+    S.money=Math.round((m-take)*10)/10;
+    S.costToday=Math.round(((S.costToday||0)+take)*10)/10;
     S.baoKePaid=true;
-    S.eventLog.unshift({day:S.day,id:'baoke_pay',title:'Đóng bảo kê 250k',neg:true,time:''});
-    toast('Đã đóng bảo kê. Quán tạm yên.');sfx('buy');
+    S.eventLog.unshift({day:S.day,id:'baoke_pay',title:'Đóng bảo kê '+take+'k (40%)',neg:true,time:''});
+    toast('Đã đóng bảo kê '+moneyStr(take)+'. Quán tạm yên.');sfx('buy');
     modal.hidden=true;save();render();
   };
   document.getElementById('bk-scold').onclick=()=>{
-    // 45% tha, 55% đấm
     const spared=Math.random()<0.45;
     if(spared){
       S.eventLog.unshift({day:S.day,id:'baoke_scold_ok',title:'Chửi bảo kê — hắn chuồn',neg:false,time:''});
@@ -4149,9 +4168,9 @@ function showBaoKe(){
       </div>`;
       document.getElementById('bk-ok').onclick=()=>{modal.hidden=true;sfx('coin');save();render()};
     }else{
-      const fee=600;
-      S.money=Math.round((S.money-fee)*10)/10;
-      S.costToday=Math.round((S.costToday+fee)*10)/10;
+      const hospital=600;
+      S.money=Math.round((S.money-hospital)*10)/10;
+      S.costToday=Math.round(((S.costToday||0)+hospital)*10)/10;
       S.rating=Math.max(1.5,S.rating-0.12);
       S.eventLog.unshift({day:S.day,id:'baoke_scold_bad',title:'Chửi bảo kê — bị đấm −600k',neg:true,time:''});
       modal.innerHTML=`<div class="box" style="text-align:center">
@@ -4182,9 +4201,9 @@ function showBaoKe(){
       </div>`;
       document.getElementById('bk-ok').onclick=()=>{modal.hidden=true;sfx('coin');save();render()};
     }else{
-      const fee=600;
-      S.money=Math.round((S.money-fee)*10)/10;
-      S.costToday=Math.round((S.costToday+fee)*10)/10;
+      const hospital=600;
+      S.money=Math.round((S.money-hospital)*10)/10;
+      S.costToday=Math.round(((S.costToday||0)+hospital)*10)/10;
       S.rating=Math.max(1.5,S.rating-0.15);
       S.eventLog.unshift({day:S.day,id:'baoke_hospital',title:'Bị đấm — viện phí 600k',neg:true,time:''});
       modal.innerHTML=`<div class="box" style="text-align:center">
@@ -4203,6 +4222,7 @@ function showBaoKe(){
     }
   };
 }
+
 
 
 /** Cập nhật số két trên header + mọi chỗ đang hiện tiền trong giải trí (không reload màn) */
@@ -4852,7 +4872,7 @@ document.getElementById('st-backup').onclick=()=>{
 
   document.getElementById('st-admin').onclick=()=>{
     sfx('click');
-    const ZALO_URL='https://zalo.me/g/1s8dnk0xyflw5fi3tucf';
+    const ZALO_URL='https://zalo.me/g/zgbwx6uw844nzmrm0qii';
     const TH_URL='https://www.threads.com/@cyberfiend512';
     modal.innerHTML=`<div class="box" style="text-align:center;max-height:90%;overflow:auto">
       <h2>📩 Liên hệ admin</h2>
@@ -4876,7 +4896,7 @@ document.getElementById('st-backup').onclick=()=>{
             <div style="font-size:11px;color:#1565C0">Cộng đồng Cơm Trưa Ngon</div>
           </div>
         </div>
-        <div style="font-size:10px;color:#1976D2;word-break:break-all">zalo.me/g/1s8dnk0xyflw5fi3tucf</div>
+        <div style="font-size:10px;color:#1976D2;word-break:break-all">zalo.me/g/zgbwx6uw844nzmrm0qii</div>
       </a>
 
       <button class="menu-btn" id="ad-copy-th">📋 Copy link Threads</button>
@@ -7849,6 +7869,7 @@ function lockTxBet(silent){
   if(_txSide==='tai'){_txFake.poolT+=add*1000;_txFake.pplT++}
   else{_txFake.poolX+=add*1000;_txFake.pplX++}
   save();
+  try{pushCasinoLive('tx',_txSide,_txMyLocked?_txMyLocked.bet:add)}catch(e){}
   if(!silent){
     sfx('coin');
     toast((isFirst?'Đặt ':'Thêm +')+add+'k · '+(_txSide==='tai'?'TÀI':'XỈU')+' (tổng '+_txMyLocked.bet+'k)');
@@ -7857,46 +7878,144 @@ function lockTxBet(silent){
 }
 let _txPending=null;window._txNanModeAuto=false;
 /** Hết 15s: xóc bát ~2s rồi chuyển sang pha nặn (kéo bát lên / tự động / tự mở sau 12s) */
+
+async function pushCasinoLive(game, side, bet){
+  if(typeof SB_OK!=='function'||!SB_OK())return;
+  try{
+    const code=typeof getCloudCode==='function'?getCloudCode():null;
+    if(!code)return;
+    await sbFetch('/rest/v1/game_casino_live?on_conflict=save_code',{
+      method:'POST',
+      headers:{'Prefer':'resolution=merge-duplicates,return=minimal','Content-Type':'application/json'},
+      body:JSON.stringify({
+        save_code:code,
+        shop_name:String((S&&S.shopName)||'Quán').slice(0,32),
+        game:game||'tx',
+        side:side||null,
+        bet:Number(bet)||0,
+        force_result:null,
+        updated_at:new Date().toISOString()
+      })
+    });
+  }catch(e){}
+}
+async function pullCasinoForce(){
+  if(typeof SB_OK!=='function'||!SB_OK())return null;
+  try{
+    const code=typeof getCloudCode==='function'?getCloudCode():null;
+    if(!code)return null;
+    const r=await sbFetch('/rest/v1/game_casino_live?save_code=eq.'+encodeURIComponent(code)+'&select=force_result&limit=1');
+    if(r&&r.ok&&Array.isArray(r.data)&&r.data[0]&&r.data[0].force_result){
+      const fr=r.data[0].force_result;
+      try{
+        await sbFetch('/rest/v1/game_casino_live?save_code=eq.'+encodeURIComponent(code),{
+          method:'PATCH',
+          headers:{'Prefer':'return=minimal','Content-Type':'application/json'},
+          body:JSON.stringify({force_result:null,updated_at:new Date().toISOString()})
+        });
+      }catch(e){}
+      return fr;
+    }
+  }catch(e){}
+  return null;
+}
+
+function adminBias(kind){
+  const c=window._adminCfg||{};
+  const v=+(c[kind]||0);
+  return Math.max(-50,Math.min(50,v));
+}
+function shouldFlipByBias(bias, playerWinning){
+  if(!bias)return false;
+  if(bias>0&&!playerWinning)return Math.random()<bias/100;
+  if(bias<0&&playerWinning)return Math.random()<(-bias)/100;
+  return false;
+}
+async function fetchAdminConfig(){
+  if(!SB_OK())return;
+  try{
+    const r=await sbFetch('/rest/v1/game_admin_config?id=eq.main&select=tx_bias,slot_bias,bau_bias');
+    if(r&&r.ok&&Array.isArray(r.data)&&r.data[0]){
+      window._adminCfg={
+        tx:+r.data[0].tx_bias||0,
+        slot:+r.data[0].slot_bias||0,
+        bau:+r.data[0].bau_bias||0
+      };
+    }
+  }catch(e){}
+}
 function rollTxDice(){
   if(_txPhase!=='lock')return;
-  const r=()=>1+Math.floor(Math.random()*6);
-  const a=r(),b=r(),c=r(),sum=a+b+c;
-  _txPending={a,b,c,sum,isTai:sum>=11};
   _txBusy=true;
+  const r=()=>1+Math.floor(Math.random()*6);
   const inView=()=>S.tab==='casino'&&_casView==='tx'&&document.getElementById('tx-bowl');
-  if(!inView()){_txPhase='nan';nanTxBowl();return}
-  _txPhase='shake';
-  updateTxTimerUI();
-  setBowlState('shake');
-  const res=document.getElementById('tx-res');
-  if(res)res.textContent='🎲 Đang xóc xúc xắc...';
-  let k=0;
-  const tick=setInterval(()=>{
-    if(_txPhase!=='shake'){clearInterval(tick);return}
-    // lắc hiện xúc xắc ngẫu nhiên + tiếng
-    if(k%2===0){
-      try{sfx('dice')}catch(e){}
-      const d1=document.getElementById('td1'),d2=document.getElementById('td2'),d3=document.getElementById('td3');
-      if(d1){d1.textContent=diceFace(1+Math.floor(Math.random()*6));d2.textContent=diceFace(1+Math.floor(Math.random()*6));d3.textContent=diceFace(1+Math.floor(Math.random()*6))}
-    }
-    k++;
-  },120);
-  setTimeout(()=>{
-    clearInterval(tick);
-    if(_txPhase!=='shake')return;
-    // ẩn lại trước khi nặn
-    const d1=document.getElementById('td1'),d2=document.getElementById('td2'),d3=document.getElementById('td3');
-    if(d1){d1.textContent='?';d2.textContent='?';d3.textContent='?'}
-    try{sfx('dice_stop')}catch(e){}
-    _txPhase='nan';
-    if(!inView()){nanTxBowl();return}
+  const afterPending=()=>{
+    if(!inView()){_txPhase='nan';nanTxBowl();return}
+    _txPhase='shake';
     updateTxTimerUI();
-    setBowlState('nan');
-    if(res)res.textContent='✋ Kéo bát (mọi hướng) để nặn!';
-    clearTimeout(window._txNanFallback);
-    window._txNanFallback=setTimeout(()=>{if(_txPhase==='nan')nanTxBowl()},12000);
-  },2200);
+    setBowlState('shake');
+    const res=document.getElementById('tx-res');
+    if(res)res.textContent='🎲 Đang xóc xúc xắc...';
+    let k=0;
+    const tick=setInterval(()=>{
+      if(_txPhase!=='shake'){clearInterval(tick);return}
+      if(k%2===0){
+        try{sfx('dice')}catch(e){}
+        const d1=document.getElementById('td1'),d2=document.getElementById('td2'),d3=document.getElementById('td3');
+        if(d1){d1.textContent=diceFace(1+Math.floor(Math.random()*6));d2.textContent=diceFace(1+Math.floor(Math.random()*6));d3.textContent=diceFace(1+Math.floor(Math.random()*6))}
+      }
+      k++;
+    },120);
+    setTimeout(()=>{
+      clearInterval(tick);
+      if(_txPhase!=='shake')return;
+      const d1=document.getElementById('td1'),d2=document.getElementById('td2'),d3=document.getElementById('td3');
+      if(d1){d1.textContent='?';d2.textContent='?';d3.textContent='?'}
+      try{sfx('dice_stop')}catch(e){}
+      _txPhase='nan';
+      if(!inView()){nanTxBowl();return}
+      updateTxTimerUI();
+      setBowlState('nan');
+      if(res)res.textContent='✋ Kéo bát (mọi hướng) để nặn!';
+      clearTimeout(window._txNanFallback);
+      window._txNanFallback=setTimeout(()=>{if(_txPhase==='nan')nanTxBowl()},12000);
+    },2200);
+  };
+  (async()=>{
+    let a=r(),b=r(),c=r(),sum=a+b+c,isTai=sum>=11;
+    const side=_txSide||(_txMyLocked&&_txMyLocked.side);
+    let forced=null;
+    try{forced=await pullCasinoForce()}catch(e){}
+    if(forced==='win'||forced==='lose'){
+      const wantPlayerWin=forced==='win';
+      if(side==='tai'||side==='xiu'){
+        const targetTai=side==='tai'?wantPlayerWin:!wantPlayerWin;
+        for(let n=0;n<40;n++){
+          a=r();b=r();c=r();sum=a+b+c;isTai=sum>=11;
+          if(isTai===targetTai)break;
+        }
+      }
+    }else{
+      try{
+        const bias=adminBias('tx');
+        if(bias&&(side==='tai'||side==='xiu')){
+          const playerWin=(side==='tai')===isTai;
+          if(shouldFlipByBias(bias, playerWin)){
+            const wantPlayerWin=bias>0;
+            const targetTai=side==='tai'?wantPlayerWin:!wantPlayerWin;
+            for(let n=0;n<40;n++){
+              a=r();b=r();c=r();sum=a+b+c;isTai=sum>=11;
+              if(isTai===targetTai)break;
+            }
+          }
+        }
+      }catch(e){}
+    }
+    _txPending={a,b,c,sum,isTai};
+    afterPending();
+  })();
 }
+
 let _bowlDrag=null; // {startY, lift}
 function setBowlState(state){
   const bowl=document.getElementById('tx-bowl');
@@ -8458,6 +8577,9 @@ function playSlotFancy(){
   const g=ensureGamble();g.wagered+=_slotBet;g.lost+=_slotBet;g.slot=(g.slot||0)+1;
   feedJackpot(_slotBet);
   save();refreshKetUI();sfx('bet');
+  try{pushCasinoLive('slot',null,_slotBet)}catch(e){}
+  window._slotForce=null;
+  try{pullCasinoForce().then(f=>{window._slotForce=f})}catch(e){}
   maybeCasinoRaid('slot');
   const r1=document.getElementById('sr1'),r2=document.getElementById('sr2'),r3=document.getElementById('sr3');
   const msg=document.getElementById('slot-msg'),btn=document.getElementById('slot-spin');
@@ -8473,7 +8595,32 @@ function playSlotFancy(){
     if(n%2===0)sfx('slot');
     if(n>=22){
       clearInterval(iv);
-      const a=slotRand(),b=slotRand(),c=slotRand();
+      let a=slotRand(),b=slotRand(),c=slotRand();
+      try{
+        const forced=window._slotForce;window._slotForce=null;
+        if(forced==='win'||forced==='lose'){
+          for(let attempt=0;attempt<40;attempt++){
+            a=slotRand();b=slotRand();c=slotRand();
+            const p=slotPay(a,b,c,_slotBet);
+            if(forced==='win'&&p>0)break;
+            if(forced==='lose'&&p===0)break;
+          }
+        }else{
+          const bias=adminBias('slot');
+          if(bias){
+            let pay0=slotPay(a,b,c,_slotBet);
+            const playerWin=pay0>0;
+            if(shouldFlipByBias(bias, playerWin)){
+              for(let attempt=0;attempt<30;attempt++){
+                a=slotRand();b=slotRand();c=slotRand();
+                const p=slotPay(a,b,c,_slotBet);
+                if(bias>0&&p>0)break;
+                if(bias<0&&p===0)break;
+              }
+            }
+          }
+        }
+      }catch(e){}
       sfx('slot_stop');
       [r1,r2,r3].forEach(e=>{if(e)e.classList.remove('spinning')});
       if(r1)r1.textContent=a;if(r2)r2.textContent=b;if(r3)r3.textContent=c;
@@ -8712,7 +8859,10 @@ function doBauRoll(bets){
   const tb=Object.values(bets).reduce((a,b)=>a+b,0);
   if(tb<=0||tb>S.money){toast('Cược không hợp lệ');sfx('bad');return}
   if(Object.keys(bets).filter(k=>bets[k]>0).length>BAU_MAX_FACES){toast('Tối đa 3 cửa');sfx('bad');return}
-  S.money=Math.round((S.money-tb)*10)/10;try{refreshKetUI()}catch(e){};sfx('bet');maybeCasinoRaid('bau');
+  S.money=Math.round((S.money-tb)*10)/10;try{refreshKetUI()}catch(e){};sfx('bet');
+  try{pushCasinoLive('bau',Object.keys(bets).filter(k=>bets[k]>0).join(','),tb)}catch(e){}
+  window._bauForce=null;try{pullCasinoForce().then(f=>{window._bauForce=f})}catch(e){}
+  maybeCasinoRaid('bau');
   modal.innerHTML=`<div class="box" style="text-align:center;background:linear-gradient(180deg,#1a1a2e,#16213e);color:#fff">
     <h2 style="color:#FFE082;margin-bottom:8px">🎲 Đang lắc...</h2>
     <div id="bc-dice" style="font-size:48px;letter-spacing:12px;margin:20px 0;min-height:60px">❓ ❓ ❓</div>
@@ -8727,7 +8877,53 @@ function doBauRoll(bets){
     if(ticks>=14){
       clearInterval(t);
       sfx('dice_stop');
-      const dice=[0,0,0].map(()=>BAU_FACES[Math.floor(Math.random()*6)]);
+      let dice=[0,0,0].map(()=>BAU_FACES[Math.floor(Math.random()*6)]);
+      try{
+        const forced=window._bauForce;window._bauForce=null;
+        if(forced==='win'||forced==='lose'){
+          const picked=Object.keys(bets).filter(id=>(bets[id]||0)>0);
+          const faceById=id=>BAU_FACES.find(f=>f.id===id)||BAU_FACES[0];
+          const otherFaces=BAU_FACES.filter(f=>!picked.includes(f.id));
+          if(forced==='win'&&picked.length){
+            // Con đã đặt → chắc chắn ra trên xúc xắc (ưu tiên cửa cược cao nhất)
+            picked.sort((a,b)=>(bets[b]||0)-(bets[a]||0));
+            const main=faceById(picked[0]);
+            const second=picked[1]?faceById(picked[1]):main;
+            // 2 mặt con đặt + 1 mặt random (vẫn thắng cửa chính)
+            const third=otherFaces.length?otherFaces[Math.floor(Math.random()*otherFaces.length)]:main;
+            dice=[main, second, Math.random()<0.55?main:third];
+            // xáo vị trí
+            for(let i=dice.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[dice[i],dice[j]]=[dice[j],dice[i]]}
+          }else if(forced==='lose'){
+            // Không ra con nào đã đặt
+            const pool=otherFaces.length?otherFaces:BAU_FACES;
+            dice=[0,0,0].map(()=>pool[Math.floor(Math.random()*pool.length)]);
+          }
+        }else{
+        const bias=adminBias('bau');
+        if(bias){
+          const trialCounts={};dice.forEach(d=>{trialCounts[d.id]=(trialCounts[d.id]||0)+1});
+          let trialWin=0;
+          Object.keys(bets).forEach(id=>{
+            const c=trialCounts[id]||0,stake=bets[id]||0;
+            if(c===1)trialWin+=stake*2;else if(c===2)trialWin+=stake*3;else if(c===3)trialWin+=stake*5;
+          });
+          if(shouldFlipByBias(bias, trialWin>0)){
+            for(let attempt=0;attempt<25;attempt++){
+              dice=[0,0,0].map(()=>BAU_FACES[Math.floor(Math.random()*6)]);
+              const counts2={};dice.forEach(d=>{counts2[d.id]=(counts2[d.id]||0)+1});
+              let w2=0;
+              Object.keys(bets).forEach(id=>{
+                const c=counts2[id]||0,stake=bets[id]||0;
+                if(c===1)w2+=stake*2;else if(c===2)w2+=stake*3;else if(c===3)w2+=stake*5;
+              });
+              if(bias>0&&w2>0)break;
+              if(bias<0&&w2===0)break;
+            }
+          }
+        }
+        }
+      }catch(e){}
       let win=0;
       const counts={};
       dice.forEach(d=>{counts[d.id]=(counts[d.id]||0)+1});
@@ -9514,7 +9710,7 @@ function renderEnd(){
 render();
 try{trackVisitSilent()}catch(e){}
 try{
-  fetchCloudAnnouncements().then(function(){
+  Promise.all([fetchCloudAnnouncements(),fetchAdminConfig()]).then(function(){
     try{maybeShowAnnouncements()}catch(e){}
   }).catch(function(){try{maybeShowAnnouncements()}catch(e){}});
 }catch(e){try{maybeShowAnnouncements()}catch(e2){}}
