@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>DuyVip · Thông báo Cơm Trưa Ngon</title>
+<style>
+  :root{--pink:#FF8FAB;--pink-d:#F7658A;--ink:#4A3F35;--bg:#FFF5F7}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,sans-serif;background:linear-gradient(165deg,#FFD6E0,#FFF0E6);color:var(--ink);min-height:100vh;padding:16px}
+  .wrap{max-width:520px;margin:0 auto}
+  h1{font-size:22px;color:#E84A6F;margin:0 0 4px}
+  .sub{font-size:12px;color:#9A8B7A;margin-bottom:16px}
+  .card{background:#fff;border-radius:18px;padding:16px;border:2px solid #FFE0E8;box-shadow:0 8px 24px rgba(255,143,171,.15);margin-bottom:14px}
+  label{display:block;font-size:12px;font-weight:700;margin:10px 0 4px}
+  input,textarea{width:100%;padding:10px 12px;border-radius:12px;border:1.5px solid #FFE0E8;font-size:14px;font-family:inherit}
+  textarea{min-height:120px;resize:vertical;line-height:1.5}
+  button{font-family:inherit;cursor:pointer;border:0;border-radius:14px;padding:12px 16px;font-weight:800;font-size:14px}
+  .btn-p{background:linear-gradient(180deg,#FF9BB5,#F7658A);color:#fff;width:100%;margin-top:12px;box-shadow:0 4px 0 #E84A6F}
+  .btn-g{background:#FFF0F3;color:#E84A6F;width:100%;margin-top:8px}
+  .btn-d{background:#FFEBEE;color:#C62828;padding:8px 12px;font-size:12px}
+  .list-item{border:1.5px solid #FFE0E8;border-radius:12px;padding:12px;margin-bottom:8px;background:#FFFBF9}
+  .list-item .t{font-weight:800;color:#E84A6F}
+  .list-item .d{font-size:11px;color:#9A8B7A}
+  .list-item .b{font-size:13px;margin-top:6px;white-space:pre-wrap;line-height:1.45}
+  .err{color:#C62828;font-size:13px;margin-top:8px}
+  .ok{color:#2E7D32;font-size:13px;margin-top:8px}
+  .gate{max-width:320px;margin:40px auto}
+  code{background:#FFF0F3;padding:2px 6px;border-radius:6px;font-size:11px}
+  .hint{font-size:11px;color:#8D6E63;line-height:1.4;margin-top:8px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div id="gate" class="gate card">
+    <h1>🔐 DuyVip Admin</h1>
+    <p class="sub">Trang đăng thông báo in-game</p>
+    <label>Mật khẩu</label>
+    <input type="password" id="pw" placeholder="Nhập mật khẩu admin" autocomplete="current-password">
+    <button class="btn-p" id="btn-in">Vào</button>
+    <div class="err" id="gate-err" hidden></div>
+  </div>
+
+  <div id="app" hidden>
+    <h1>📢 Đăng thông báo</h1>
+    <p class="sub">Nội dung sẽ hiện popup trong game Cơm Trưa Ngon</p>
+
+    <div class="card">
+      <label>Tiêu đề</label>
+      <input id="title" placeholder="Ví dụ: Cập nhật 30/09">
+      <label>Ngày hiển thị</label>
+      <input id="date" placeholder="30/09/2026">
+      <label>Nội dung (mỗi ý một dòng, có thể dùng • )</label>
+      <textarea id="body" placeholder="• Fix lỗi A&#10;• Thêm tính năng B&#10;• ..."></textarea>
+      <button class="btn-p" id="btn-post">🚀 Đăng thông báo</button>
+      <div id="msg" class="ok" hidden></div>
+      <p class="hint">Mỗi lần đăng tạo id mới → người chơi sẽ thấy lại popup (kể cả đã đóng bản cũ).</p>
+    </div>
+
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <strong>Danh sách đã đăng</strong>
+        <button class="btn-g" id="btn-reload" style="width:auto;padding:8px 12px;margin:0">↻ Tải lại</button>
+      </div>
+      <div id="list">Đang tải...</div>
+    </div>
+
+    <div class="card">
+      <strong>SQL cần chạy 1 lần trên Supabase</strong>
+      <pre style="font-size:10px;overflow:auto;background:#FFF8F0;padding:10px;border-radius:10px;line-height:1.4">create table if not exists game_announcements (
+  id text primary key,
+  title text not null,
+  body text not null,
+  date_label text,
+  active boolean default true,
+  created_at timestamptz default now()
+);
+alter table game_announcements enable row level security;
+create policy "ann_select" on game_announcements for select to anon, authenticated using (true);
+create policy "ann_insert" on game_announcements for insert to anon, authenticated with check (true);
+create policy "ann_update" on game_announcements for update to anon, authenticated using (true) with check (true);
+create policy "ann_delete" on game_announcements for delete to anon, authenticated using (true);</pre>
+      <p class="hint">SQL Editor → dán → Run. Xong là đăng được.</p>
+    </div>
+  </div>
+</div>
+<script>
+const SB_URL = 'https://pdlksxbdorvdqwhcvsze.supabase.co';
+const SB_ANON = 'sb_publishable_wgWxRSlTpRPVW0dC-nxwRA_nn4AAewK';
+const ADMIN_PW = 'duyvip'; // đổi mật khẩu tại đây nếu muốn
+
+async function sb(path, opts={}){
+  const headers = Object.assign({
+    'apikey': SB_ANON,
+    'Authorization': 'Bearer ' + SB_ANON,
+    'Content-Type': 'application/json',
+    'Prefer': opts.prefer || 'return=representation'
+  }, opts.headers||{});
+  const r = await fetch(SB_URL + '/rest/v1/' + path, Object.assign({}, opts, {headers}));
+  const text = await r.text();
+  let data=null; try{data=text?JSON.parse(text):null}catch(e){data=text}
+  return {ok:r.ok, status:r.status, data};
+}
+
+function todayLabel(){
+  const d=new Date();
+  return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear();
+}
+document.getElementById('date').value = todayLabel();
+
+document.getElementById('btn-in').onclick=()=>{
+  const v=document.getElementById('pw').value.trim();
+  if(v!==ADMIN_PW){
+    const e=document.getElementById('gate-err');
+    e.hidden=false;e.textContent='Sai mật khẩu';
+    return;
+  }
+  sessionStorage.setItem('ctn_duyvip','1');
+  document.getElementById('gate').hidden=true;
+  document.getElementById('app').hidden=false;
+  loadList();
+};
+if(sessionStorage.getItem('ctn_duyvip')==='1'){
+  document.getElementById('gate').hidden=true;
+  document.getElementById('app').hidden=false;
+  loadList();
+}
+
+document.getElementById('btn-post').onclick=async()=>{
+  const title=document.getElementById('title').value.trim();
+  const body=document.getElementById('body').value.trim();
+  const date=document.getElementById('date').value.trim()||todayLabel();
+  const msg=document.getElementById('msg');
+  if(!title||!body){msg.hidden=false;msg.className='err';msg.textContent='Điền tiêu đề và nội dung';return}
+  const id='ann-'+Date.now();
+  msg.hidden=false;msg.className='ok';msg.textContent='Đang đăng...';
+  const res=await sb('game_announcements',{
+    method:'POST',
+    body:JSON.stringify({id,title,body,date_label:date,active:true})
+  });
+  if(!res.ok){
+    msg.className='err';
+    msg.textContent='Lỗi: '+(typeof res.data==='object'?JSON.stringify(res.data):res.data)+' — kiểm tra đã chạy SQL chưa';
+    return;
+  }
+  msg.className='ok';msg.textContent='Đã đăng! Người chơi sẽ thấy trong game.';
+  document.getElementById('title').value='';
+  document.getElementById('body').value='';
+  loadList();
+};
+
+document.getElementById('btn-reload').onclick=()=>loadList();
+
+async function loadList(){
+  const el=document.getElementById('list');
+  el.textContent='Đang tải...';
+  const res=await sb('game_announcements?select=*&order=created_at.desc');
+  if(!res.ok){
+    el.innerHTML='<div class="err">Không tải được. Chạy SQL tạo bảng trước.<br>'+(res.data&&res.data.message?res.data.message:'')+'</div>';
+    return;
+  }
+  const rows=Array.isArray(res.data)?res.data:[];
+  if(!rows.length){el.innerHTML='<p style="color:#9A8B7A;font-size:13px">Chưa có thông báo</p>';return}
+  el.innerHTML=rows.map(r=>`
+    <div class="list-item" data-id="${r.id}">
+      <div class="t">${escapeHtml(r.title||'')}</div>
+      <div class="d">${escapeHtml(r.date_label||'')} · ${r.active===false?'(đã ẩn)':'đang hiện'} · <code>${r.id}</code></div>
+      <div class="b">${escapeHtml(r.body||'')}</div>
+      <div style="margin-top:8px;display:flex;gap:8px">
+        <button class="btn-d" data-act="hide">Ẩn</button>
+        <button class="btn-d" data-act="del">Xóa</button>
+      </div>
+    </div>`).join('');
+  el.querySelectorAll('[data-act]').forEach(btn=>{
+    btn.onclick=async()=>{
+      const id=btn.closest('.list-item').dataset.id;
+      if(btn.dataset.act==='del'){
+        if(!confirm('Xóa thông báo này?'))return;
+        await sb('game_announcements?id=eq.'+encodeURIComponent(id),{method:'DELETE',prefer:'return=minimal'});
+      }else{
+        await sb('game_announcements?id=eq.'+encodeURIComponent(id),{
+          method:'PATCH',
+          body:JSON.stringify({active:false}),
+          prefer:'return=minimal'
+        });
+      }
+      loadList();
+    };
+  });
+}
+function escapeHtml(s){
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+</script>
+</body>
+</html>
