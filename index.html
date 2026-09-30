@@ -2000,7 +2000,19 @@ async function submitScore({playerName, shopName, score, dayReached, rating, dif
     const prev=await sbFetch('/rest/v1/leaderboard?shop_name=eq.'+encodeURIComponent(shop)+'&select=id,score&order=score.desc&limit=1',{method:'GET'});
     if(prev.ok&&prev.data&&prev.data[0]){
       const row=prev.data[0];
-      if((row.score||0)>=payload.score){
+      const logoOnly={
+        avatar:payload.avatar,
+        logo_emoji:payload.logo_emoji,
+        logo_data:payload.logo_data,
+        player_name:payload.player_name
+      };
+      // Điểm thấp hơn: vẫn cập nhật logo/avatar
+      if((row.score||0)>payload.score){
+        try{
+          await sbFetch('/rest/v1/leaderboard?id=eq.'+row.id,{
+            method:'PATCH', headers:{'Prefer':'return=minimal'}, body:JSON.stringify(logoOnly)
+          });
+        }catch(e){}
         return {ok:true, data:null, status:200, skipped:true};
       }
       const patch=await sbFetch('/rest/v1/leaderboard?id=eq.'+row.id,{
@@ -2009,7 +2021,7 @@ async function submitScore({playerName, shopName, score, dayReached, rating, dif
         body:JSON.stringify(payload)
       });
       if(patch.ok)return patch;
-      const slim={player_name:payload.player_name,shop_name:payload.shop_name,score:payload.score,day_reached:payload.day_reached,rating:payload.rating,difficulty:payload.difficulty,money:payload.money};
+      const slim={player_name:payload.player_name,shop_name:payload.shop_name,score:payload.score,day_reached:payload.day_reached,rating:payload.rating,difficulty:payload.difficulty,money:payload.money,avatar:payload.avatar,logo_emoji:payload.logo_emoji};
       const patch2=await sbFetch('/rest/v1/leaderboard?id=eq.'+row.id,{
         method:'PATCH', headers:{'Prefer':'return=representation'}, body:JSON.stringify(slim)
       });
@@ -2930,7 +2942,7 @@ const UPGRADES=[
   {id:'bep_lua',name:'Bếp lửa lớn',desc:'Cơm chín nhanh · vùng nấu rộng',cost:450,max:1,cat:'bep',needLv:5},
   // ===== Nhân viên =====
   {id:'nv_pro',name:'👨‍🍳 Phụ bếp 1',desc:'Bạn lấy đĩa & giao món. NV tự múc cơm/canh/topping đúng order (~90%), nấu nhanh. · 150k/ngày',cost:420,max:1,cat:'nv',wage:150,exclusive:'bep_nv',correctRate:0.9,needLv:3},
-  {id:'nv_cheap',name:'🧑‍🍳 Phụ bếp 2',desc:'Bạn lấy đĩa & giao món. NV phụ nấu nhưng hay sai (~45%). · 50k/ngày',cost:180,max:1,cat:'nv',wage:50,exclusive:'bep_nv',correctRate:0.55},
+  {id:'nv_cheap',name:'🧑‍🍳 Phụ bếp 2',desc:'Bạn lấy đĩa & giao món. NV phụ nấu, đúng món ~75%. · 50k/ngày',cost:180,max:1,cat:'nv',wage:50,exclusive:'bep_nv',correctRate:0.75},
   {id:'thu_ngan',name:'💰 Chị Hà · Thu ngân',desc:'Đứng quầy: khách không quỵt được tiền. · Lương 50k/ngày',cost:320,max:1,cat:'nv',wage:50,needLv:3},
   {id:'phuc_vu',name:'🙂 Bé Lan · Chạy bàn',desc:'Khách kiên nhẫn hơn, ít bỏ về. · Lương 60k/ngày',cost:280,max:2,cat:'nv',wage:60,needLv:4},
   {id:'nhan_vien',name:'🪑 Thêm bàn ngồi',desc:'+1 chỗ khách (tối đa 2)',cost:250,max:2,cat:'nv'},
@@ -4160,7 +4172,7 @@ function startNewDay(){
   }
   if(S.loan&&S.loan.remaining<=0){S.loan=null}
   if((S.money||0)<-50)S.money=0;
-  S.phase='prep';S.tab='kho';S.soldToday=0;S.leftToday=0;S.revenueToday=0;S.costToday=0;S.pending={};
+  S.phase='prep';S.tab='kho';S.soldToday=0;S.leftToday=0;S.revenueToday=0;S.costToday=0;S.pending={};S.soldByMenu={};
   S.gameMin=OPEN_MIN;S.eventsToday=0;
   S.haggleLeft=3; // mỗi ngày 3 lượt trả giá
   S.haggleBestPct=0;
@@ -5933,7 +5945,7 @@ function showFarDeliveryOffer(mid, price){
     if(S.money<15){toast('Không đủ 15k thuê ship');return}
     S.money-=15;S.costToday=(S.costToday||0)+15;
     const pay=price+Math.max(2,Math.floor(price*0.05));
-    S.money+=pay;S.revenueToday+=pay;S.soldToday++;
+    S.money+=pay;S.revenueToday+=pay;try{trackMenuSold((typeof cust!=="undefined"&&cust)?(cust.want||cust.wantMain):null)}catch(e){}try{trackMenuSold((typeof cust!=="undefined"&&cust)?(cust.want||cust.wantMain):null)}catch(e){}try{trackMenuSold((typeof cust!=="undefined"&&cust)?(cust.want||cust.wantMain):null)}catch(e){}try{trackMenuSold((typeof cust!=="undefined"&&cust)?(cust.want||cust.wantMain):null)}catch(e){}try{trackMenuSold((typeof cust!=="undefined"&&cust)?(cust.want||cust.wantMain):null)}catch(e){}S.soldToday++;
     const st=ensureShipStats();st.hire++;st.far++;st.earn+=pay;
     tryConsumeDeliveryStock(mid);
     sfx('deliver_ok');
@@ -6655,6 +6667,7 @@ const canServe=box.hasBox&&box.hasRice&&(box.mains.length>0||box.canh||box.sides
 let staffBusy=false;
 function doStaffCook(){
   if(staffBusy)return;
+  if(S.bepResting||!activeBepStaff()){toast('NV đang nghỉ');sfx('bad');return}
   const cust=tables[selectedTable];
   if(!cust){toast('Không có khách');sfx('bad');return}
   if(cust.outOfStock){refreshCustWant(cust);cust.outOfStock=false;delete cust.swapFrom}
@@ -6800,12 +6813,15 @@ function doKick(){
   };
 }
 function hasCookStaff(){
+  // Cho nghỉ: không tự kéo NV đi làm lại
+  if(S.bepResting)return false;
   if(S.activeBep&&(S.upgrades[S.activeBep]||0)>0)return true;
   if(S.upgrades.nv_pro){S.activeBep='nv_pro';return true}
   if(S.upgrades.nv_cheap){S.activeBep='nv_cheap';return true}
   return false;
 }
 function activeBepStaff(){
+  if(S.bepResting)return null;
   if(S.activeBep&&(S.upgrades[S.activeBep]||0)>0)return S.activeBep;
   if(S.upgrades.nv_pro)return 'nv_pro';
   if(S.upgrades.nv_cheap)return 'nv_cheap';
@@ -7239,7 +7255,7 @@ function doServe(){
   const tip=perfect?Math.max(1,Math.floor(price*tipMul)):Math.max(1,Math.floor(price*0.04));
   let shipBonus=0;
   if(cust.isOnline||cust.isShip)shipBonus=Math.max(3,Math.floor(price*0.12));
-  const pay=price+tip+shipBonus;S.money+=pay;S.revenueToday+=pay;S.soldToday++;S.reviews++;S.dirtyPlates=(S.dirtyPlates||0)+1;try{bumpWeekStat('sold',1);if(perfect)bumpWeekStat('perfect',1)}catch(e){};try{revalidateAllCustWants()}catch(e){}
+  const pay=price+tip+shipBonus;S.money+=pay;S.revenueToday+=pay;S.soldToday++;try{trackMenuSold(cust.want||cust.wantMain)}catch(e){}S.reviews++;S.dirtyPlates=(S.dirtyPlates||0)+1;try{bumpWeekStat('sold',1);if(perfect)bumpWeekStat('perfect',1)}catch(e){};try{revalidateAllCustWants()}catch(e){}
   S.quests.forEach(q=>{if(q.id==='sell')q.progress=Math.min(q.target,q.progress+1);if(q.id==='perfect'&&perfect)q.progress=Math.min(q.target,q.progress+1)});
 
   let foodStar,staffStar,ownerStar,comment;
@@ -9364,8 +9380,8 @@ function renderNang(){
   return h;
 }
 function bindNang(){
-  document.querySelectorAll('[data-rest]').forEach(b=>b.onclick=()=>{sfx('click');S.activeBep=null;toast('NV nghỉ');save();render()});
-  document.querySelectorAll('[data-work]').forEach(b=>b.onclick=()=>{sfx('click');S.activeBep=b.dataset.work;toast('NV đi làm');save();render()});
+  document.querySelectorAll('[data-rest]').forEach(b=>b.onclick=()=>{sfx('click');S.activeBep=null;S.bepResting=true;toast('NV nghỉ — bạn tự nấu');save();render()});
+  document.querySelectorAll('[data-work]').forEach(b=>b.onclick=()=>{sfx('click');S.bepResting=false;S.activeBep=b.dataset.work;toast('NV đi làm');save();render()});
   document.querySelectorAll('[data-ncat]').forEach(b=>b.onclick=()=>{sfx('click');nangCat=b.dataset.ncat;render()});
   document.querySelectorAll('button[data-u]').forEach(b=>b.onclick=()=>{
     const u=UPGRADES.find(x=>x.id===b.dataset.u);const c=S.upgrades[u.id]||0;const cost=Math.round(u.cost*(1+c*.55));
@@ -9378,7 +9394,7 @@ function bindNang(){
     }
     S.money-=cost;S.upgrades[u.id]=c+1;
     if(u.exclusive==='bep_nv'){
-      S.activeBep=u.id;
+      S.bepResting=false;S.activeBep=u.id;
       toast('✅ '+(u.id==='nv_pro'?'Phụ bếp 1':'Phụ bếp 2')+' đang làm việc');
     }
     if(u.id==='bien_hieu')S.rating=Math.min(5,S.rating+.15);
@@ -9533,12 +9549,15 @@ async function loadBxhPanel(){
       const sc=Number(r.score)||0;
       const isYou=(r.shop_name&&S.lbShopName&&r.shop_name===S.lbShopName)||(r.shop_name===S.shopName);
       let av='';
-      if(isYou&&S.logo&&S.logo.dataUrl){
+      // Ưu tiên logo_data từ server (hiện logo người khác)
+      if(r.logo_data&&String(r.logo_data).length>20){
+        av=`<img src="${String(r.logo_data).replace(/"/g,'')}" alt="" style="width:36px;height:36px;border-radius:50%;object-fit:cover;border:2px solid #FFE0E8;background:#FFF3E0" onerror="this.onerror=null;this.outerHTML='🧑‍🍳'">`;
+      }else if(isYou&&S.logo&&S.logo.dataUrl){
         av=`<img src="${S.logo.dataUrl}" style="width:36px;height:36px;border-radius:50%;object-fit:cover;border:2px solid #FFE0E8">`;
       }else if(isYou&&S.ownerAvatarData){
         av=`<img src="${S.ownerAvatarData}" style="width:36px;height:36px;border-radius:50%;object-fit:cover;border:2px solid #FFE0E8">`;
-      }else if(r.logo_data){
-        av=`<img src="${esc(r.logo_data)}" style="width:36px;height:36px;border-radius:50%;object-fit:cover;border:2px solid #FFE0E8" onerror="this.style.display='none'">`;
+      }else if(false&&r.logo_data){
+        av=`<img src="${String(r.logo_data).replace(/"/g,'')}" alt="" style="width:36px;height:36px;border-radius:50%;object-fit:cover;border:2px solid #FFE0E8;background:#FFF3E0" onerror="this.onerror=null;this.outerHTML='🧑‍🍳'">`;
       }else if(isYou&&S.ownerAvatar){
         try{av=avatarHTML(S.ownerAvatar,36)}catch(e){av='🧑‍🍳'}
       }else if(r.avatar){
@@ -9671,6 +9690,28 @@ function showWeekQuests(){
   document.getElementById('wq-ok').onclick=()=>{modal.hidden=true;sfx('click')};
 }
 
+
+function trackMenuSold(mid, n){
+  if(!mid)return;
+  if(!S.soldByMenu)S.soldByMenu={};
+  S.soldByMenu[mid]=(S.soldByMenu[mid]||0)+(n||1);
+}
+function dayMenuSalesReport(){
+  const counts=S.soldByMenu||{};
+  const sold=Object.keys(counts).filter(id=>counts[id]>0).map(id=>({id,n:counts[id],name:(MENU[id]&&MENU[id].name)||id}))
+    .sort((a,b)=>b.n-a.n);
+  const best=sold.slice(0,3);
+  // Món ế: đã mở khóa, bán 0 trong ngày (ưu tiên), hoặc bán ít nhất trong top dưới
+  const unlocked=Object.keys(MENU).filter(id=>{
+    try{return typeof isMenuUnlocked==='function'?isMenuUnlocked(id):true}catch(e){return true}
+  });
+  let slow=unlocked.filter(id=>(counts[id]||0)===0).map(id=>({id,n:0,name:(MENU[id]&&MENU[id].name)||id}));
+  if(slow.length>3)slow=slow.slice(0,3);
+  if(!slow.length&&sold.length){
+    slow=sold.slice().reverse().filter(x=>x.n>0&&x.n<=2).slice(0,3);
+  }
+  return {best,slow,totalSold:sold.reduce((s,x)=>s+x.n,0)};
+}
 function renderEnd(){
   stopPatienceLoop();stopTimeLoop();stopCook();paused=false;
   S.quests.forEach(q=>{if(q.id==='no_leave')q.progress=S.leftToday===0?1:0});
@@ -9756,6 +9797,27 @@ function renderEnd(){
     <div class="stat"><span>XP</span><strong>+${bx+dx}</strong></div>
     <div class="stat"><span>Độ khó</span><strong>${diffLabel()}</strong></div>
     <div class="stat"><span>Bán / Bỏ về</span><strong>${S.soldToday} / ${S.leftToday}</strong></div>
+    ${(()=>{
+      try{
+        const R=dayMenuSalesReport();
+        let h='';
+        if(R.best.length){
+          h+='<div class="stat" style="flex-direction:column;align-items:stretch;gap:4px;text-align:left">';
+          h+='<span style="font-weight:800;color:#E84A6F">🔥 Best seller hôm nay</span>';
+          R.best.forEach((x,i)=>{h+='<div style="display:flex;justify-content:space-between;font-size:12px"><span>'+(i===0?'🥇':i===1?'🥈':'🥉')+' '+x.name+'</span><strong>'+x.n+' suất</strong></div>'});
+          h+='</div>';
+        }else{
+          h+='<div class="stat"><span>🔥 Best seller</span><strong>Chưa bán suất nào</strong></div>';
+        }
+        if(R.slow.length){
+          h+='<div class="stat" style="flex-direction:column;align-items:stretch;gap:4px;text-align:left">';
+          h+='<span style="font-weight:800;color:#8D6E63">😴 Món ế hôm nay</span>';
+          R.slow.forEach(x=>{h+='<div style="display:flex;justify-content:space-between;font-size:12px"><span>'+x.name+'</span><strong style="color:#A1887F">'+(x.n?x.n+' suất':'0 suất')+'</strong></div>'});
+          h+='</div>';
+        }
+        return h;
+      }catch(e){return ''}
+    })()}
     <div class="stat"><span>Số dư két</span><strong id="end-ket">${moneyStr(S.money)}</strong></div>
     ${(()=>{
       if(!taxInfo)return '';const T=ensureTax();let o='';
