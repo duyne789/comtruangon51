@@ -4,8 +4,7 @@
   Author: Duy Nguyễn
   Threads: https://www.threads.com/@cyberfiend512
   © 2026 Duy Nguyễn — All rights reserved.
-  Unauthorized cloning without credit is not allowed.
-  Build-id: @duyne512
+  TikTok: @duyne512
 -->
 <html lang="vi">
 <head>
@@ -442,7 +441,7 @@
     .chip .ci img{width:52px;height:52px;object-fit:cover;border-radius:12px}
     .item-row .icon img{width:32px;height:32px;object-fit:cover;border-radius:8px}
     .ob-icon img{width:28px;height:28px;object-fit:cover;border-radius:8px;vertical-align:middle}
-    .chip .cn{font-size:13px;font-weight:800;margin-top:5px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#37474F}
+    .chip .cn{font-size:10px;font-weight:800;margin-top:3px;line-height:1.15;white-space:normal;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;word-break:break-word;max-height:2.4em;color:#37474F;padding:0 2px}
     .chip .cq{
       position:absolute;top:-7px;right:-7px;
       background:linear-gradient(135deg,#26A69A,#00897B);color:#fff;
@@ -561,12 +560,12 @@
     }
     .tray-scroll::-webkit-scrollbar{display:none}
     .tray-scroll .chip,.shelf-food .chip{
-      width:90px!important;min-height:96px;flex:none;
+      width:86px!important;min-height:102px;flex:none;
       border-radius:16px;padding:10px 4px 8px;
     }
     .tray-scroll .chip .ci{font-size:42px;min-height:52px}
     .tray-scroll .chip .ci img{width:52px!important;height:52px!important}
-    .tray-scroll .chip .cn{font-size:13px!important}
+    .tray-scroll .chip .cn{font-size:10px!important;line-height:1.15!important;white-space:normal!important;-webkit-line-clamp:2;display:-webkit-box;-webkit-box-orient:vertical}
     .tray-scroll .chip .ci img{width:44px;height:44px;border-radius:10px}
     .tray-scroll .chip .cn{font-size:10px;margin-top:3px;max-width:68px;font-weight:700}
     .shelf.shelf-food .shelf-body{display:flex;flex-wrap:nowrap;gap:6px;overflow-x:auto;max-height:none;padding:4px}
@@ -2868,36 +2867,46 @@ const SPOIL_FINE={
 };
 function markStockIn(id,qty){
   if(!S.stockAge)S.stockAge={};
-  if(!S.stockAge[id])S.stockAge[id]=S.day||1;
+  S.stockAge[id]=S.day||1;
 }
 function processSpoilage(){
+  if(!S.stock)S.stock={};
   if(!S.stockAge)S.stockAge={};
+  const day=S.day||1;
   let msgs=[],seized=0;
-  for(const id of Object.keys(S.stock||{})){
-    const q=Math.floor(+S.stock[id]||0);if(q<=0)continue;
-    const life=SHELF_LIFE[id];if(life==null||life>=90)continue;
-    const since=S.stockAge[id]!=null?S.stockAge[id]:S.day;
-    const age=(S.day||1)-since;
+  for(const id of Object.keys(S.stock)){
+    const q=Math.floor(+S.stock[id]||0);
+    if(q<=0){S.stock[id]=0;delete S.stockAge[id];continue}
+    const life=SHELF_LIFE[id];
+    if(life==null||life>=90)continue;
+    if(S.stockAge[id]==null){S.stockAge[id]=day;continue}
+    const since=+S.stockAge[id]||day;
+    const age=day-since;
     if(age>=life){
       seized+=q;
       msgs.push((INGREDIENTS[id]?.name||id)+' ×'+q);
-      S.stock[id]=0;delete S.stockAge[id];
+      S.stock[id]=0;
+      delete S.stockAge[id];
+      if(S.pending&&S.pending[id])delete S.pending[id];
     }
   }
   if(seized>0){
-    // Phạt nhẹ cố định ~10k (nhắc nhở) — chỉ xóa hàng hết hạn, không trừ két nặng
-    const fine=10;
-    const mon=Math.max(0, Math.round((Number(S.money)||0)*10)/10);
-    const take=Math.min(fine, mon);
-    if(take>0){
-      S.money=Math.round((mon-take)*10)/10;
-      S.costToday=Math.round(((S.costToday||0)+take)*10)/10;
-    }
-    toast('🗑️ Hết hạn · đã bỏ '+seized+' phần'+(msgs.length?(': '+msgs.slice(0,3).join(', ')+(msgs.length>3?'…':'')):'')+(take>0?' · nhắc '+take+'k':''));
-    sfx('click');
     try{revalidateAllCustWants()}catch(e){}
+    const list=msgs.slice(0,4).join(', ')+(msgs.length>4?'…':'');
+    toast('🗑️ Hết hạn · đã bỏ '+seized+' phần ('+list+') — nhập lại trước khi bán');
+    sfx('bad');
+    S._spoilMsg={day,seized,msgs:msgs.slice()};
   }
+  return seized||0;
 }
+function daysLeftIng(id){
+  const life=SHELF_LIFE[id];
+  if(life==null||life>=90)return 99;
+  if(stockOf(id)<=0)return 0;
+  if(!S.stockAge||S.stockAge[id]==null)return life;
+  return Math.max(0, life-((S.day||1)-(+S.stockAge[id]||S.day)));
+}
+
 
 
 function isIngExpired(id){
@@ -5303,6 +5312,14 @@ function finishBuy(baseCost,finalCost){
 }
 
 function doStartSell(){
+  // Trước khi mở cửa: quét hết hạn lần nữa (an toàn)
+  try{
+    const n=processSpoilage();
+    if(n>0){
+      toast('Có hàng hết hạn vừa bỏ — kiểm tra Kho rồi mở lại');
+      sfx('bad');save();render();return;
+    }
+  }catch(e){}
   // nếu còn pending chưa nhập thì nhập trước
   let cost=0;for(const[k,v] of Object.entries(S.pending||{}))cost+=ingBuyCost(k)*v;
   cost=Math.round(cost*10)/10;
@@ -5722,7 +5739,7 @@ function generateQueue(){
   let n0=seats+plan.first[0]+Math.floor(Math.random()*(plan.first[1]-plan.first[0]+1));
   n0=Math.max(1,Math.min(total,n0));
   S._walkBudget=Math.max(0,total-n0);
-  planLull();
+  planLull();S._wavePlan=null;S._walkIns=0;
   const q=[];
   if(!Object.keys(MENU).some(m=>canOrderMenu(m)))return q;
   for(let i=0;i<n0;i++){
@@ -5971,93 +5988,136 @@ function maybeSpawnWalkIns(){
   if(S.phase!=='sell'||paused||afterCloseTime())return;
   if(!S._queue)S._queue=[];
   const seats=tables.length;
-  const sitting=tables.filter(Boolean).length;
-  const waiting=S._queue.length;
-  // Ưu tiên lấp bàn trống từ hàng chờ
+  let sitting=tables.filter(Boolean).length;
+  let waiting=S._queue.length;
   let filled=false;
-  for(let i=0;i<tables.length;i++){
-    if(!tables[i]&&S._queue.length){
+  let changed=false;
+
+  // 1) Luôn lấp bàn trống từ hàng chờ trước
+  function seatFromQueue(){
+    let did=false;
+    for(let i=0;i<tables.length;i++){
+      if(tables[i])continue;
+      if(!S._queue.length)break;
       let next=S._queue.shift();
-      if(next && !next.patience)next=makeCust(next);
-      if(next && next.want && !canOrderMenu(next.want)){
+      if(next&&!next.patience)next=makeCust(next);
+      if(next&&next.want&&!canOrderMenu(next.want)){
         if(!refreshCustWant(next)){S.leftToday=(S.leftToday||0)+1;next=null}
       }
-      if(next){tables[i]=next;filled=true}
+      if(next){tables[i]=next;did=true}
+    }
+    return did;
+  }
+  if(seatFromQueue()){filled=true;changed=true}
+
+  sitting=tables.filter(Boolean).length;
+  waiting=S._queue.length;
+  const empty=seats-sitting;
+  const gm=S.gameMin||OPEN_MIN;
+  const crowd=S.crowd||'lairai';
+  const pr=avgPriceRatio();
+
+  // 2) Sóng khách theo khung giờ (vd 12:10 thưa → 12:20 có 3–4 → 12:40 thêm…)
+  if(!S._wavePlan)S._wavePlan=buildDayWaves(crowd);
+  const wave=S._wavePlan.find(w=>!w.done&&gm>=w.at);
+  if(wave){
+    wave.done=true;
+    let n=wave.n;
+    if(pr>=1.5)n=Math.max(1,Math.floor(n*0.3));
+    else if(pr>=1.33)n=Math.max(1,Math.floor(n*0.55));
+    else if(pr>=1.2)n=Math.max(1,Math.floor(n*0.75));
+    let added=0;
+    for(let k=0;k<n;k++){
+      const w=makeRandomWalkIn();
+      if(!w)break;
+      S._queue.push(w);
+      S._walkIns=(S._walkIns||0)+1;
+      added++;
+    }
+    if(added){
+      changed=true;
+      if(crowd==='vang')toast('🚶 Có '+added+' khách ghé quán');
+      else if(added>=3)toast('🚶 Sóng khách: +'+added);
     }
   }
-  // Không spawn thêm nếu hàng chờ đã đủ dài (bàn + chờ ≥ seats+3)
-  if(waiting+sitting>=seats+3 && !filled){
-    if(filled)updateSell();
-    return;
-  }
-  const crowd=S.crowd||'lairai';
-  const _plan=CROWD_PLAN[crowd]||CROWD_PLAN.lairai;
-  let chance=_plan.chance;
-  const left=CLOSE_MIN-(S.gameMin||OPEN_MIN);
-  if(left<=25)chance*=0.3;
-  else if(left<=50)chance*=0.55;
-  // Peak giờ trưa 11:30–13:00
-  const gm=S.gameMin||OPEN_MIN;
-  if(gm>=11*60+30 && gm<=13*60)chance*=1.25;
-  const pr=avgPriceRatio();
-  if(pr>=1.5)chance*=0.12;
-  else if(pr>=1.33)chance*=0.38;
+
+  // 3) Khách lẻ giữa các sóng (xác suất thấp, bàn trống thì cao hơn)
+  const left=CLOSE_MIN-gm;
+  let chance=crowd==='dong'?0.28:crowd==='vang'?0.12:0.18;
+  if(left<=25)chance*=0.35;
+  else if(left<=50)chance*=0.6;
+  if(gm>=11*60+30&&gm<=13*60)chance*=1.2;
+  if(pr>=1.5)chance*=0.15;
+  else if(pr>=1.33)chance*=0.4;
   else if(pr>=1.2)chance*=0.65;
-  S._walkIns=S._walkIns||0;
-  const maxWalk=(S._walkBudget!=null)?S._walkBudget:12;
-  if(S._walkIns>=maxWalk){if(filled)updateSell();return}
-  // Bàn trống → ưu tiên spawn ngay
-  const empty=seats-tables.filter(Boolean).length;
-  if(empty>0)chance=Math.min(0.9, chance+0.2);
-  if(empty>0&&waiting===0)chance=Math.min(0.92, chance+0.1); // bàn trống + không hàng chờ → dễ có khách
-  // Giờ vắng (chỉ ngày vắng): khách thưa thớt một lúc rồi đông lại
+  // Lull ngày vắng: vẫn có khách thưa, không cắt sạch
   const L=S._lull;
-  if(L){
-    if(gm>=L.start&&gm<L.end){
-      chance*=0.25;
-      if(!L.told){L.told=true;toast('🍃 Đang vắng khách một lúc… khách sẽ thưa đi')}
-    }else if(gm>=L.end&&!L.endTold){L.endTold=true;toast('🚶 Khách bắt đầu ghé lại!')}
+  if(L&&gm>=L.start&&gm<L.end){
+    chance*=0.45;
+    if(!L.told){L.told=true;toast('🍃 Đang vắng hơn một lúc…')}
+  }else if(L&&gm>=L.end&&!L.endTold){L.endTold=true;toast('🚶 Khách bắt đầu ghé lại!')}
+  if(empty>0&&waiting===0)chance=Math.min(0.85,chance+0.35);
+  else if(empty>0)chance=Math.min(0.7,chance+0.15);
+
+  S._walkIns=S._walkIns||0;
+  const maxWalk=(S._walkBudget!=null)?S._walkBudget:16;
+  if(S._walkIns<maxWalk&&Math.random()<chance){
+    const n=(empty>=2&&Math.random()<0.35)?2:1;
+    for(let k=0;k<n;k++){
+      if(S._walkIns>=maxWalk)break;
+      const w=makeRandomWalkIn();
+      if(!w)break;
+      S._queue.push(w);
+      S._walkIns++;
+      changed=true;
+    }
   }
-  if(Math.random()>chance){if(filled)updateSell();return}
-  const n=(crowd==='dong'&&Math.random()<0.25)?2:(empty>1&&Math.random()<0.2?2:1);
-  for(let k=0;k<n;k++){
-    if(S._walkIns>=maxWalk)break;
-    const w=makeRandomWalkIn();
-    if(!w)break; // hết món
-    S._queue.push(w);
-    S._walkIns++;
-  }
-  // Đơn online ngồi bàn / ship: cấp 4+ hoặc đã mua app
-  if(appUnlocked() && S._walkIns<maxWalk+5){
-    const onlineChance=(S.upgrades.ship_online||0)>0?0.38:0.22;
-    // Ép ít nhất 1 khách online nếu chưa có trong ngày
+
+  // 4) Online/ship nhẹ
+  if(appUnlocked()&&S._walkIns<maxWalk+4){
     S._onlineToday=S._onlineToday||0;
-    const forceOnline=S._onlineToday<1 && (S.gameMin||0)>=11*60;
-    if(forceOnline || Math.random()<onlineChance){
+    const onlineChance=(S.upgrades.ship_online||0)>0?0.2:0.1;
+    const forceOnline=S._onlineToday<1&&gm>=11*60;
+    if(forceOnline||Math.random()<onlineChance){
       const w=makeRandomWalkIn({isOnline:true,isShip:true});
       if(w){
-        S._queue.push(w);
-        S._walkIns++;
-        S._onlineToday++;
-        ensureShipStats().online++;
-        sfx('honk');
-        if(forceOnline)toast('📱 Có đơn online tới!');
+        S._queue.push(w);S._walkIns++;S._onlineToday++;
+        try{ensureShipStats().online++}catch(e){}
+        if(forceOnline){sfx('honk');toast('📱 Có đơn online tới!')}
+        changed=true;
       }
     }
   }
-  for(let i=0;i<tables.length;i++){
-    if(!tables[i]&&S._queue.length){
-      let next=S._queue.shift();
-      // Hàng chờ cũ có thể chưa makeCust / order đã hết hàng
-      if(next && !next.patience)next=makeCust(next);
-      if(next && next.want && !canOrderMenu(next.want)){
-        if(!refreshCustWant(next)){toast(next.name+' thấy hết món, bỏ về');S.leftToday=(S.leftToday||0)+1;next=null}
-      }
-      if(next){tables[i]=next;filled=true}
-    }
-  }
-  if(filled||n>0)updateSell();
+
+  if(seatFromQueue()){filled=true;changed=true}
+  if(changed||filled)updateSell();
 }
+
+/** Lịch sóng khách trong ngày — thưa rồi đông từng đợt */
+function buildDayWaves(crowd){
+  const open=OPEN_MIN; // 10:30
+  // Các mốc phút trong ngày (game)
+  const slots=[
+    open+15,  // ~10:45
+    open+40,  // ~11:10
+    open+65,  // ~11:35
+    open+90,  // ~12:00
+    open+110, // ~12:20
+    open+130, // ~12:40
+    open+150, // ~13:00
+    open+175, // ~13:25
+    open+200, // ~13:50
+    open+225  // ~14:15
+  ];
+  const cfg={
+    dong:  [2,3,4,3,4,3,3,2,2,2],
+    lairai:[1,2,2,2,3,2,2,2,1,1],
+    vang:  [1,1,2,1,3,2,1,2,1,1]
+  };
+  const nums=cfg[crowd]||cfg.lairai;
+  return slots.map((at,i)=>({at,n:nums[i]||1,done:false}));
+}
+
 
 
 /* ===== HƯỚNG DẪN NẤU LẦN ĐẦU ===== */
