@@ -2104,20 +2104,38 @@ async function cloudPushAuto(force){
   try{
     const code=getCloudCode();
     let checkpoints=[];
+    // Giữ pending admin nếu chưa áp được (tránh push local đè mất lệnh level cao)
+    let keepDelta=0, keepXp=0, keepXpSet=null;
+    let appliedDelta=false, appliedXp=false, appliedXpSet=false;
     try{
       const prev=await sbFetch('/rest/v1/game_saves?save_code=eq.'+encodeURIComponent(code)+'&select=data&limit=1',{method:'GET',headers:{'Accept':'application/json'}});
       if(prev.ok&&Array.isArray(prev.data)&&prev.data[0]&&prev.data[0].data){
         let d=prev.data[0].data;
         if(typeof d==='string')d=JSON.parse(d);
         if(d&&Array.isArray(d.checkpoints))checkpoints=d.checkpoints;
-        // Admin cộng/trừ tiền → áp vào két local rồi xóa pending khi push
-        const pend=Number(d&&d.pendingAdminDelta)||0;
-        if(pend){
-          S.money=Math.round(((Number(S.money)||0)+pend)*10)/10;
+        keepDelta=Number(d&&d.pendingAdminDelta)||0;
+        keepXp=Number(d&&d.pendingAdminXp)||0;
+        keepXpSet=(d&&d.pendingAdminXpSet!=null&&isFinite(Number(d.pendingAdminXpSet)))?Math.floor(Number(d.pendingAdminXpSet)):null;
+        // Áp tiền
+        if(keepDelta){
+          S.money=Math.round(((Number(S.money)||0)+keepDelta)*10)/10;
+          appliedDelta=true;keepDelta=0;
           try{refreshKetUI()}catch(e){}
-          try{save()}catch(e){}
-          try{toast(pend>0?('💰 Admin cộng +'+pend+'k'):('💰 Admin trừ '+pend+'k'))}catch(e){}
+          try{toast(keepDelta>0?('💰 Admin cộng'):('💰 Admin chỉnh tiền · két '+S.money+'k'))}catch(e){}
         }
+        // Áp set XP/level (ưu tiên hơn cộng XP)
+        if(keepXpSet!=null){
+          S.xp=Math.max(0,keepXpSet);
+          try{shopLevel()}catch(e){}
+          appliedXpSet=true;keepXpSet=null;keepXp=0;
+          try{toast('⭐ Admin set Cấp '+(S.level||'?')+' · '+S.xp+' XP')}catch(e){}
+        }else if(keepXp){
+          S.xp=Math.max(0,(Number(S.xp)||0)+Math.floor(keepXp));
+          try{shopLevel()}catch(e){}
+          appliedXp=true;keepXp=0;
+          try{toast('⭐ Admin +XP · Cấp '+(S.level||'?'))}catch(e){}
+        }
+        if(appliedDelta||appliedXp||appliedXpSet){try{save()}catch(e){}}
       }
     }catch(e){}
     const cp=makeCheckpoint();
@@ -2131,9 +2149,14 @@ async function cloudPushAuto(force){
       shopName:S.shopName||'',
       day:S.day||1,
       money:S.money||0,
+      xp:S.xp||0,
+      level:(typeof shopLevel==='function'?shopLevel().id:S.level)||1,
       state:cp.state,
       checkpoints,
-      pendingAdminDelta:0
+      // Chỉ xóa pending khi ĐÃ áp; không thì giữ lại để lần sau nhận
+      pendingAdminDelta:appliedDelta?0:keepDelta,
+      pendingAdminXp:appliedXp||appliedXpSet?0:keepXp,
+      pendingAdminXpSet:appliedXpSet?null:keepXpSet
     };
     const body={save_code:code,shop_name:String(S.shopName||'Cơm Trưa').slice(0,32),data:payload,updated_at:new Date().toISOString()};
     let res=await sbFetch('/rest/v1/game_saves?on_conflict=save_code',{
@@ -2163,8 +2186,10 @@ function scheduleCloudSave(force){
   _cloudTimer=setTimeout(()=>{cloudPushAuto(false)},4000);
 }
 // Nhận tiền admin khi vào game + định kỳ
-setTimeout(()=>{try{pullAdminMoneyGrant()}catch(e){}},1800);
-setInterval(()=>{try{pullAdminMoneyGrant()}catch(e){}},45000);
+setTimeout(()=>{try{pullAdminMoneyGrant()}catch(e){}},1200);
+setTimeout(()=>{try{pullAdminMoneyGrant()}catch(e){}},4000);
+setInterval(()=>{try{pullAdminMoneyGrant()}catch(e){}},20000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)try{pullAdminMoneyGrant()}catch(e){}});
 
 async function cloudFetchCheckpoints(code){
   if(!SB_OK())return {ok:false,error:'Chưa cấu hình server'};
@@ -2191,7 +2216,7 @@ function applyCloudState(state, meta){
   }catch(e){}
   save();
 }
-/** Nhận tiền admin từ cloud (pendingAdminDelta) */
+/** Nhận tiền + level/XP admin từ cloud */
 async function pullAdminMoneyGrant(){
   if(!SB_OK()||!S)return false;
   try{
@@ -2200,14 +2225,47 @@ async function pullAdminMoneyGrant(){
     if(!res.ok||!res.data||!res.data[0])return false;
     let d=res.data[0].data;
     if(typeof d==='string')d=JSON.parse(d);
-    const pend=Number(d&&d.pendingAdminDelta)||0;
-    if(!pend)return false;
-    S.money=Math.round(((Number(S.money)||0)+pend)*10)/10;
-    d.pendingAdminDelta=0;
-    d.money=S.money;
-    if(d.state)d.state.money=S.money;
+    if(!d)return false;
+    let changed=false;
+    const msgs=[];
+    const pend=Number(d.pendingAdminDelta)||0;
+    if(pend){
+      S.money=Math.round(((Number(S.money)||0)+pend)*10)/10;
+      d.pendingAdminDelta=0;
+      changed=true;
+      msgs.push(pend>0?('💰 +'+pend+'k'):('💰 '+pend+'k'));
+    }
+    // Set XP tuyệt đối (nâng level) — ưu tiên
+    if(d.pendingAdminXpSet!=null&&d.pendingAdminXpSet!==''&&isFinite(Number(d.pendingAdminXpSet))){
+      const setXp=Math.max(0,Math.floor(Number(d.pendingAdminXpSet)));
+      S.xp=setXp;
+      d.pendingAdminXpSet=null;
+      d.pendingAdminXp=0;
+      changed=true;
+      const sh=shopLevel();
+      S.level=sh.id;
+      msgs.push('⭐ Cấp '+sh.id+' · '+sh.name+' · '+S.xp+' XP');
+    }else{
+      const addXpN=Number(d.pendingAdminXp)||0;
+      if(addXpN){
+        S.xp=Math.max(0,(Number(S.xp)||0)+Math.floor(addXpN));
+        d.pendingAdminXp=0;
+        changed=true;
+        const sh=shopLevel();
+        S.level=sh.id;
+        msgs.push(addXpN>0?('⭐ +'+addXpN+' XP → Cấp '+sh.id):('⭐ XP · Cấp '+sh.id));
+      }
+    }
+    if(!changed)return false;
+    // Đồng bộ mọi chỗ
+    d.money=S.money;d.xp=S.xp;d.level=S.level||(typeof shopLevel==='function'?shopLevel().id:1);
+    if(d.state){d.state.money=S.money;d.state.xp=S.xp;d.state.level=d.level}
     if(Array.isArray(d.checkpoints)){
-      d.checkpoints.forEach(cp=>{if(!cp)return;cp.money=S.money;if(cp.state)cp.state.money=S.money});
+      d.checkpoints.forEach(cp=>{
+        if(!cp)return;
+        cp.money=S.money;
+        if(cp.state){cp.state.money=S.money;cp.state.xp=S.xp;cp.state.level=d.level}
+      });
     }
     await sbFetch('/rest/v1/game_saves?save_code=eq.'+encodeURIComponent(code),{
       method:'PATCH',
@@ -2216,7 +2274,8 @@ async function pullAdminMoneyGrant(){
     });
     save();
     try{refreshKetUI()}catch(e){}
-    toast(pend>0?('💰 Nhận +'+pend+'k từ admin'):('💰 Admin trừ '+Math.abs(pend)+'k'));
+    try{render()}catch(e){}
+    toast('Admin: '+msgs.join(' · '));
     return true;
   }catch(e){return false}
 }
@@ -3491,7 +3550,7 @@ function logoRatingBonus(){
 
 const LOGO_EMOJIS=['🍚','🍜','🍱','🥢','🍲','🥘','🍛','🍣','🥗','🥚','🐟','🥩','🌶️','🌸','⭐','💛','🔥','👑','💎','🏡','🐷','🐱','🐯','🐸'];
 const LOGO_BG=['#E84A6F','#FF8A65','#FFB300','#66BB6A','#26A69A','#42A5F5','#7E57C2','#8D6E63','#5D4037','#37474F','#FFFFFF','#FFF8E1'];
-const LOGO_COST=1000;
+const LOGO_COST=10000;
 const OWNER_AVATARS=['man_wink','girl_long','chef','beanie','hipster','hat_girl','worker','music','bald_thumb','auntie_bun','grandma','doctor','shipper_helm','kid_book','rainbow','man_sharp'];
 
 function logoHTML(size){
@@ -3527,7 +3586,7 @@ function showLogoDesigner(){
   modal.hidden=false;
   modal.innerHTML=`<div class="box" style="text-align:center;max-height:92vh;overflow:auto">
     <h2>🎨 Thiết kế logo thương hiệu</h2>
-    <p style="font-size:12px;color:var(--ink2);margin:0 0 8px">${owned?'Sửa logo & avatar':'Lần đầu · <b style="color:#E84A6F">${LOGO_COST}k</b> · tự vẽ + chọn avatar'}</p>
+    <p style="font-size:12px;color:var(--ink2);margin:0 0 8px">${owned?'Sửa logo & avatar':'Lần đầu · <b style="color:#E84A6F">${moneyStr(LOGO_COST)}</b> · tự vẽ + chọn avatar'}</p>
 
     <p style="font-size:11px;font-weight:800;margin:6px 0 4px;color:var(--ink2)">👤 Avatar chủ quán</p>
     <div style="display:flex;gap:8px;justify-content:center;align-items:center;margin-bottom:8px;flex-wrap:wrap">
@@ -3580,7 +3639,7 @@ function showLogoDesigner(){
     <div style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-bottom:12px" id="logo-acs">
       ${['#FFFFFF','#FFE066','#FFD1DC','#C8E6C9','#B3E5FC','#E1BEE7','#FFCCBC','#4A3F35'].map(c=>`<button type="button" data-ac="${c}" style="width:26px;height:26px;border-radius:50%;border:2px solid ${c===pickAc?'#333':'#ddd'};background:${c};cursor:pointer"></button>`).join('')}
     </div>
-    <button class="menu-btn primary" id="logo-save">${owned?'💾 Lưu logo & avatar':'🛒 Mua & gắn · '+LOGO_COST+'k'}</button>
+    <button class="menu-btn primary" id="logo-save">${owned?'💾 Lưu logo & avatar':'🛒 Mua & gắn · '+moneyStr(LOGO_COST)}</button>
     <button class="menu-btn" id="logo-cancel">Hủy</button>
   </div>`;
 
@@ -3758,9 +3817,9 @@ function showLogoDesigner(){
   document.getElementById('logo-cancel').onclick=()=>{modal.hidden=true;sfx('click');S._pendingAvatarData=null;S._clearAvatarData=false};
   document.getElementById('logo-save').onclick=()=>{
     if(!owned){
-      if((S.money||0)<LOGO_COST){toast('Không đủ '+LOGO_COST+'k!');sfx('bad');return}
+      if((S.money||0)<LOGO_COST){toast('Không đủ '+moneyStr(LOGO_COST)+'!');sfx('bad');return}
       S.money=Math.round((S.money-LOGO_COST)*10)/10;
-      toast('Đã mua logo thương hiệu −'+LOGO_COST+'k');sfx('coin');
+      toast('Đã mua logo thương hiệu −'+moneyStr(LOGO_COST));sfx('coin');
     }else{sfx('quest');toast('Đã lưu logo & avatar!');}
     // export circular logo
     const out=document.createElement('canvas');out.width=128;out.height=128;
