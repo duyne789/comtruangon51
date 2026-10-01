@@ -331,8 +331,10 @@
     .end-day .stat strong{color:#E84A6F;font-weight:800}
     .tut{
       flex:1;display:flex;flex-direction:column;
-      background:linear-gradient(180deg,#FFF5F7,#FFF9F0);padding:20px;
+      background:linear-gradient(180deg,#FFF5F7,#FFF9F0);
+      padding:8px 10px max(10px, env(safe-area-inset-bottom, 0px));
       justify-content:center;align-items:center;text-align:center;position:relative;
+      overflow:hidden;min-height:0;width:100%;
     }
     .tut h2{font-family:var(--fd);font-size:20px;margin-bottom:8px;color:#E84A6F;font-weight:700}
     .tut p{color:var(--ink2);margin-bottom:16px;max-width:280px;font-size:13px;line-height:1.5;font-weight:600}
@@ -1416,7 +1418,8 @@
   
     /* ===== Khai trương (wizard) ===== */
     .splash-top .icon-btn{position:static}
-    .wz-card{background:#fff;border:2px solid #FFE0E8;border-radius:22px;padding:18px 16px 16px;max-width:360px;width:100%;margin:0 auto;text-align:center;box-shadow:0 8px 28px rgba(255,143,171,.25)}
+    .wz-card{background:#fff;border:2px solid #FFE0E8;border-radius:22px;padding:14px 14px 12px;max-width:360px;width:100%;margin:0 auto;text-align:center;box-shadow:0 8px 28px rgba(255,143,171,.25);max-height:100%;max-height:min(100%,calc(100dvh - 16px));max-height:min(100%,calc(100svh - 16px));display:flex;flex-direction:column;overflow:hidden;flex-shrink:1}
+    .wz-scroll{flex:1 1 auto;overflow-y:auto;min-height:0;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;padding-bottom:4px}
     .wz-dots{display:flex;gap:6px;justify-content:center;margin-bottom:10px}
     .wz-dots i{width:22px;height:6px;border-radius:99px;background:#F3DCE3}.wz-dots i.on{background:#F7658A;width:34px}.wz-dots i.done{background:#7ED6A5}
     .wz-ic{font-size:40px}.wz-card h2{font-family:var(--fd);color:#E84A6F;margin:4px 0;font-size:20px}
@@ -1426,11 +1429,12 @@
     .wz-sugg{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-top:10px}
     .wz-sugg button{font-size:11px;font-weight:700;padding:5px 10px;border-radius:99px;background:#FFF0F3;border:1.5px solid #FFD0DA;color:#B0455F}
     .wz-lb{font-size:11px;font-weight:800;color:var(--ink2);text-align:left;margin:8px 2px 4px}
-    .wz-opts{display:grid;grid-template-columns:1fr 1fr;gap:8px}.wz-opts.three{grid-template-columns:1fr 1fr 1fr}
-    .wz-opts button{display:flex;flex-direction:column;align-items:center;gap:2px;padding:10px 4px;border-radius:14px;border:2.5px solid #F0D5DC;background:#FFFBF9;font-weight:800;font-size:12px}
-    .wz-opts button span{font-size:24px}.wz-opts small{font-size:9.5px;font-weight:600;color:var(--ink2)}
+    .wz-opts{display:grid;grid-template-columns:1fr 1fr;gap:6px}.wz-opts.three{grid-template-columns:1fr 1fr 1fr}
+    .wz-opts button{display:flex;flex-direction:column;align-items:center;gap:1px;padding:8px 3px;border-radius:14px;border:2.5px solid #F0D5DC;background:#FFFBF9;font-weight:800;font-size:11px}
+    .wz-opts button span{font-size:22px}.wz-opts small{font-size:9px;font-weight:600;color:var(--ink2)}
+    @media(max-height:640px){.wz-ic{font-size:28px!important}.wz-card h2{font-size:17px!important}.wz-card p{margin-bottom:8px!important}.wz-opts button{padding:6px 2px}.wz-opts button span{font-size:18px}.wz-lb{margin:8px 0 4px!important}}
     .wz-opts button.on{border-color:#F7658A;background:#FFF0F5;box-shadow:0 3px 0 #E84A6F}
-    .wz-nav{display:flex;gap:8px;margin-top:16px}.wz-nav .btn-primary{flex:1;padding:12px 10px;font-size:15px}
+    .wz-nav{display:flex;gap:8px;margin-top:8px;flex:0 0 auto;flex-shrink:0;padding:10px 0 2px;border-top:1px solid #FFE8EE;background:#fff;position:relative;z-index:5}.wz-nav .btn-primary{flex:1;padding:12px 10px;font-size:15px;min-height:48px}.wz-nav .wz-back{flex:0 0 auto}
     .wz-back{padding:12px 16px;border-radius:999px;background:#FFF0F3;color:#B0455F;font-weight:800;border:2px solid #FFD0DA}
     .wz-sign{display:inline-block;background:#7B4A2A;color:#FFE7A8;font-family:var(--fd);font-weight:800;font-size:18px;padding:8px 18px;border:3px solid #4E2E17;border-radius:8px;box-shadow:0 4px 0 #4E2E17;margin:6px 0 10px;max-width:100%;word-break:break-word}
     .wz-sum{display:flex;justify-content:center;gap:8px;font-size:11px;font-weight:700;color:var(--ink2)}.wz-sum span{background:#FFF0F3;border-radius:99px;padding:3px 10px}
@@ -3272,7 +3276,7 @@ function diffLabel(){const d=getDiff();return d.emoji+' '+d.label}
 
 
 let S=load()||defaultState();
-if(!S.decor)S.decor=[];if(!S.pending)S.pending={};if(!S.reviewList)S.reviewList=[];if(S.loan===undefined)S.loan=null;if(!S.avgRevenue)S.avgRevenue=0;if(S.totalProfit==null)S.totalProfit=0;if(S.gameMin==null)S.gameMin=10*60+30;if(S.eventsToday==null)S.eventsToday=0;if(!S.eventLog)S.eventLog=[];if(S.restStreak==null)S.restStreak=0;if(S.baoKePaid==null)S.baoKePaid=false;if(S.dirtyPlates==null)S.dirtyPlates=0;if(S.loginStreak==null)S.loginStreak=0;if(!S.badges)S.badges={};if(!S.regulars)S.regulars={};if(!S.diff||!DIFF[S.diff])S.diff='de';try{if(!S.crowd)S.crowd=dayCrowdType(S.day);if(!S.weekday)S.weekday=weekdayName(S.day)}catch(e){};try{const f=JSON.parse(localStorage.getItem('comTruaNgon_adminFlags')||'{}');if(f.forceBaoKe&&S.phase==='prep'){setTimeout(()=>{maybeBaoKe()},800)}}catch(e){}
+if(!S.decor)S.decor=[];if(!S.pending)S.pending={};if(!S.reviewList)S.reviewList=[];if(S.loan===undefined)S.loan=null;if(!S.avgRevenue)S.avgRevenue=0;if(S.totalProfit==null)S.totalProfit=0;if(S.gameMin==null)S.gameMin=10*60+30;if(S.eventsToday==null)S.eventsToday=0;if(!S.eventLog)S.eventLog=[];if(S.restStreak==null)S.restStreak=0;if(S.baoKePaid==null)S.baoKePaid=false;if(S.dirtyPlates==null)S.dirtyPlates=0;if(S.loginStreak==null)S.loginStreak=0;if(!S.badges)S.badges={};if(!S.regulars)S.regulars={};if(!S.diff||!DIFF[S.diff])S.diff='de';try{if(!S.crowd)S.crowd=dayCrowdType(S.day);if(!S.weekday)S.weekday=weekdayName(S.day)}catch(e){};try{const f=JSON.parse(localStorage.getItem('comTruaNgon_adminFlags')||'{}');if(f.forceBaoKe&&S.phase==='prep'){/* bao ke removed */}}catch(e){}
 
 /* ===== SỰ KIỆN NGẪU NHIÊN (số lần & tỉ lệ theo độ khó) ===== */
 const RANDOM_EVENTS=[
@@ -4129,10 +4133,11 @@ function renderArtPick(){
     <div class="wz-sign">🍚 ${escShop(w.name||'Cơm Trưa Ngon')}</div>
     <div class="wz-sum"><span>${artStyle==='pixel'?'🕹️ Pixel':'✨ Bình thường'}</span><span>${(S.diff||'binh')==='de'?'🍀 Dễ':(S.diff||'binh')==='kho'?'🔥 Khó':'⛅ Bình thường'}</span><span>${themeMode==='auto'?'🌗 Tự động':themeMode==='0'?'☀️ Sáng':'🌙 Tối'}</span></div>
     <p style="margin-top:8px">Chúc quán đắt khách!</p>`;
-  app.innerHTML=`<div class="tut" style="justify-content:center;padding:20px 16px"><div class="wz-card anim-in">
-    <div class="wz-dots">${dots}</div>${body}
-    <div class="wz-nav">${w.step>0?'<button class="wz-back" id="wz-back">Quay lại</button>':''}
-      <button class="btn-primary" id="wz-next">${w.step<2?'Tiếp theo':'🎉 Khai trương'}</button></div></div></div>`;
+  app.innerHTML=`<div class="tut"><div class="wz-card anim-in">
+    <div class="wz-dots">${dots}</div>
+    <div class="wz-scroll">${body}</div>
+    <div class="wz-nav">${w.step>0?'<button type="button" class="wz-back" id="wz-back">Quay lại</button>':''}
+      <button type="button" class="btn-primary" id="wz-next">${w.step<2?'Tiếp theo →':'🎉 Khai trương'}</button></div></div></div>`;
   const inp=document.getElementById('wz-name');
   if(inp){setTimeout(()=>inp.focus(),60);inp.oninput=()=>{w.name=inp.value};
     inp.onkeydown=e=>{if(e.key==='Enter')document.getElementById('wz-next').click()}}
@@ -4352,112 +4357,10 @@ function showWhatsNew(){
   localStorage.setItem('ctWhatsNew',WHATS_NEW_VER);
   document.getElementById('wn-go').onclick=()=>{modal.hidden=true;sfx('click')};
 }
-/* Đại ca bảo kê — ngày 5,10,15,20,25,30 */
-function maybeBaoKe(){
-  let force=false;
-  try{const f=JSON.parse(localStorage.getItem('comTruaNgon_adminFlags')||'{}');force=!!f.forceBaoKe;if(force){f.forceBaoKe=false;localStorage.setItem('comTruaNgon_adminFlags',JSON.stringify(f))}}catch(e){}
-  if(!force&&![5,10,15,20,25,30].includes(S.day))return;
-  setTimeout(()=>showBaoKe(),600);
-}
-function showBaoKe(){
-  if(S.phase!=='prep')return;
-  modal.hidden=false;
-  const mon=Math.max(0, Math.round((Number(S.money)||0)*10)/10);
-  // Đóng 10% két hiện có (tối thiểu 0)
-  const fee=Math.round(mon*0.1*10)/10;
-  const canPay=mon>0&&fee>0;
-  const feeStr=moneyStr(fee);
-  modal.innerHTML=`<div class="box" style="text-align:center">
-    <div style="font-size:48px">🕶️</div>
-    <h2>Đại ca bảo kê!</h2>
-    <p style="font-size:13px;color:var(--ink2);margin:8px 0 14px;line-height:1.5">
-      Một gã giang hồ bước vào quán:<br>
-      <i>"Quán này muốn yên ổn thì nộp <b style="color:#E84A6F">10% két</b> bảo kê<br>(= <b style="color:#E84A6F">${feeStr}</b>)."</i>
-    </p>
-    <p style="font-size:12px;color:var(--ink2);margin:0 0 10px">Két hiện có: <b>${moneyStr(mon)}</b> · Bảo kê: <b style="color:#E84A6F">${feeStr}</b></p>
-    <button class="menu-btn primary" id="bk-pay" ${canPay?'':'disabled style="opacity:.4;pointer-events:none"'}>💰 Đóng ${feeStr} bảo kê (10%)</button>
-    ${!canPay?'<p style="font-size:11px;color:#E84A6F;margin:4px 0 8px">Két trống — không thu được</p>':''}
-    <button class="menu-btn" id="bk-scold" style="background:linear-gradient(135deg,#FF8A65,#FF7043);color:#fff">🤬 Chửi cho một trận</button>
-    <button class="menu-btn danger" id="bk-kick">😤 Đuổi hắn ra</button>
-  </div>`;
-  document.getElementById('bk-pay').onclick=()=>{
-    const m=Math.max(0, Math.round((Number(S.money)||0)*10)/10);
-    const take=Math.round(m*0.1*10)/10;
-    if(take<=0){toast('Két trống!');sfx('bad');modal.hidden=true;return}
-    S.money=Math.round((m-take)*10)/10;
-    S.costToday=Math.round(((S.costToday||0)+take)*10)/10;
-    S.baoKePaid=true;
-    S.eventLog.unshift({day:S.day,id:'baoke_pay',title:'Đóng bảo kê '+take+'k (10%)',neg:true,time:''});
-    toast('Đã đóng bảo kê '+moneyStr(take)+'. Quán tạm yên.');sfx('buy');
-    modal.hidden=true;save();render();
-  };
-  document.getElementById('bk-scold').onclick=()=>{
-    const spared=Math.random()<0.45;
-    if(spared){
-      S.eventLog.unshift({day:S.day,id:'baoke_scold_ok',title:'Chửi bảo kê — hắn chuồn',neg:false,time:''});
-      S.baoKePaid=false;
-      modal.innerHTML=`<div class="box" style="text-align:center">
-        <div style="font-size:48px">😮</div>
-        <h2>Hắn... chuồn?</h2>
-        <p style="font-size:13px;color:var(--ink2);line-height:1.5">Bạn chửi một trận. Hắn ngượng, lủi mất.<br>Không phải đóng bảo kê!</p>
-        <button class="menu-btn primary" id="bk-ok">Hên quá!</button>
-      </div>`;
-      document.getElementById('bk-ok').onclick=()=>{modal.hidden=true;sfx('coin');save();render()};
-    }else{
-      const hospital=600;
-      S.money=Math.round((S.money-hospital)*10)/10;
-      S.costToday=Math.round(((S.costToday||0)+hospital)*10)/10;
-      S.rating=Math.max(1.5,S.rating-0.12);
-      S.eventLog.unshift({day:S.day,id:'baoke_scold_bad',title:'Chửi bảo kê — bị đấm −600k',neg:true,time:''});
-      modal.innerHTML=`<div class="box" style="text-align:center">
-        <div style="font-size:48px">🤕</div>
-        <h2>Bị đấm!</h2>
-        <p style="font-size:13px;color:var(--ink2);line-height:1.5">
-          Hắn không chịu được lời chửi, gọi đàn em tới.<br>
-          Viện phí: <b style="color:#E84A6F">−600k</b>
-        </p>
-        <button class="menu-btn primary" id="bk-ok">Ối…</button>
-      </div>`;
-      document.getElementById('bk-ok').onclick=()=>{
-        modal.hidden=true;sfx('bad');save();
-        if(S.money<0){S.phase='end';render()}else render();
-      };
-    }
-  };
-  document.getElementById('bk-kick').onclick=()=>{
-    const success=Math.random()<0.4;
-    if(success){
-      S.eventLog.unshift({day:S.day,id:'baoke_kick_ok',title:'Đuổi được đại ca bảo kê!',neg:false,time:''});
-      S.baoKePaid=false;
-      modal.innerHTML=`<div class="box" style="text-align:center">
-        <div style="font-size:48px">💪</div>
-        <h2>Đuổi thành công!</h2>
-        <p style="font-size:13px;color:var(--ink2)">Hắn chuồn mất. Không phải đóng bảo kê!</p>
-        <button class="menu-btn primary" id="bk-ok">Tuyệt!</button>
-      </div>`;
-      document.getElementById('bk-ok').onclick=()=>{modal.hidden=true;sfx('coin');save();render()};
-    }else{
-      const hospital=600;
-      S.money=Math.round((S.money-hospital)*10)/10;
-      S.costToday=Math.round(((S.costToday||0)+hospital)*10)/10;
-      S.rating=Math.max(1.5,S.rating-0.15);
-      S.eventLog.unshift({day:S.day,id:'baoke_hospital',title:'Bị đấm — viện phí 600k',neg:true,time:''});
-      modal.innerHTML=`<div class="box" style="text-align:center">
-        <div style="font-size:48px">🤕</div>
-        <h2>Bị đấm nhập viện!</h2>
-        <p style="font-size:13px;color:var(--ink2);line-height:1.5">
-          Hắn gọi người tới đánh bạn.<br>
-          Viện phí: <b style="color:#E84A6F">−600k</b>
-        </p>
-        <button class="menu-btn primary" id="bk-ok">Ối…</button>
-      </div>`;
-      document.getElementById('bk-ok').onclick=()=>{
-        modal.hidden=true;sfx('bad');save();
-        if(S.money<0){S.phase='end';render()}else render();
-      };
-    }
-  };
-}
+/* Bảo kê đã gỡ — không còn sự kiện đại ca */
+function maybeBaoKe(){ /* disabled */ }
+function showBaoKe(){ /* disabled */ }
+
 
 
 
@@ -10032,7 +9935,7 @@ function renderEnd(){
       }
     },1000);
   });
-  document.getElementById('nd').onclick=()=>{sfx('click');S.day++;startNewDay();maybeBaoKe()};
+  document.getElementById('nd').onclick=()=>{sfx('click');S.day++;startNewDay()};
   save();
 }
 
