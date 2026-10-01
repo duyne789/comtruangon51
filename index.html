@@ -3200,7 +3200,7 @@ const defaultState=()=>({
   eventsToday:0,
   eventLog:[],
   restStreak:0,
-  baoKePaid:false,dirtyPlates:0,loginStreak:0,lastLoginDate:null,badges:{},regulars:{},crowd:null,weekday:null,diff:'binh',
+  baoKePaid:false,dirtyPlates:0,daySpends:[],loginStreak:0,lastLoginDate:null,badges:{},regulars:{},crowd:null,weekday:null,diff:'binh',
   haggleLeft:3,haggleBestPct:0,lbPlayerName:null,lbShopName:null,stockAge:{},
   logo:null,ownerAvatar:null,ownerAvatarData:null,bauStats:null,chatCount:0,chatLog:null,chatSeen:false,
   weekStats:{sold:0,left:0,revenue:0,cost:0,perfect:0,replies:0,days:0},
@@ -3283,7 +3283,7 @@ const RANDOM_EVENTS=[
   // tiêu cực
   {id:'quyt',neg:true,w:3,title:'Khách quỵt tiền!',msg:(c,amt)=>`${c} chạy mất không trả tiền (−${amt}k)`,run:(c,amt)=>{if(S.upgrades.thu_ngan){toast('Thu ngân chặn được vụ quỵt!');sfx('coin');return 'blocked'}S.money=Math.max(0,S.money-amt);S.revenueToday=Math.max(0,S.revenueToday-amt);sfx('bad')}},
   {id:'ongba',neg:false,w:3,title:'Người già xin giúp!',msg:()=>'Có cụ già đứng ngoài quán xin tiền hoặc suất cơm…',run:()=>{}},
-  {id:'do_com',neg:true,w:2,title:'Khách đổ cơm!',msg:(c)=>`${c} làm đổ suất cơm, đòi đền (−8k)`,run:()=>{S.money=Math.max(0,S.money-8);S.costToday+=8;sfx('bad')}},
+  {id:'do_com',neg:true,w:2,title:'Khách đổ cơm!',msg:(c)=>`${c} làm đổ suất cơm, đòi đền (−8k)`,run:()=>{S.money=Math.max(0,S.money-8);addDayCost(8,'Đền cơm đổ');sfx('bad')}},
   {id:'mat_dien',neg:true,w:2,title:'Mất điện tạm!',msg:()=>'Mất điện 1 lúc, vài khách bỏ về',run:()=>{S.leftToday+=1;S.rating=Math.max(1.5,S.rating-0.03);sfx('bad')}},
   {id:'chuot',neg:true,w:1,title:'Chuột phá kho!',msg:()=>'Chuột gặm mất ít nguyên liệu',run:()=>{const keys=Object.keys(S.stock).filter(k=>(S.stock[k]||0)>2);if(keys.length){const k=keys[Math.floor(Math.random()*keys.length)];S.stock[k]=Math.max(0,S.stock[k]-2)}sfx('bad')}},
   {id:'ship_sai',neg:true,w:2,title:'Shipper trả sai tiền',msg:()=>'Shipper lấy thừa tiền (−5k)',run:()=>{S.money=Math.max(0,S.money-5);sfx('bad')}},
@@ -3373,7 +3373,7 @@ function resolveCamCase(ok, c, pickedName, root){
   }else{
     const fine=Math.max(60, Math.min(280, Math.floor((S.money||0)*0.12)+60));
     S.money=Math.max(0, (S.money||0)-fine);
-    S.costToday=(S.costToday||0)+fine;
+    addDayCost(fine,'Phạt / kiểm tra');
     S.rating=Math.max(1.2, (S.rating||4)-0.18);
     try{refreshKetUI()}catch(e){}
     save();sfx('bad');
@@ -3485,7 +3485,7 @@ function showElderlyAsk(){
   document.getElementById('el-money').onclick=()=>{
     if(S.money<giveMoney){toast('Không đủ tiền');sfx('bad');return}
     S.money=Math.round((S.money-giveMoney)*10)/10;
-    S.costToday=Math.round(((S.costToday||0)+giveMoney)*10)/10;
+    addDayCost(giveMoney,'Cho người già');
     S.rating=Math.min(5,(S.rating||4)+0.04);
     S.eventLog.unshift({day:S.day,id:'ongba_money',title:'Cho người già '+giveMoney+'k',neg:false,time:''});
     toast('Cụ cảm ơn, chúc quán làm ăn tấn tới 🙏');sfx('coin');
@@ -3982,6 +3982,18 @@ function hasApp(){return (shopLevel().id>=4)||((S.upgrades.ship_online||0)>0)}
 function addXp(n){if(!n)return;const b=shopLevel().id;S.xp=(S.xp||0)+(n|0);const a=shopLevel().id;if(a>b){sfx('level');toast('🎉 Lên cấp '+a+' — '+shopLevel().name+'!')}}
 function nextLevelXp(){const c=shopLevel();const n=SHOP_LEVELS.find(l=>l.id===c.id+1);return n?n.xp:c.xp+500}
 function decorBonus(){let r=0;for(const d of DECORATIONS){if(S.decor.includes(d.id))r+=d.id==='den_day'?0.15:d.id==='tham'?0.05:0.1}return r}
+
+function addDayCost(amt,label){
+  amt=Math.round((Number(amt)||0)*10)/10;
+  if(amt<=0)return;
+  S.costToday=Math.round(((S.costToday||0)+amt)*10)/10;
+  if(!S.daySpends)S.daySpends=[];
+  // gộp cùng nhãn
+  const last=S.daySpends[S.daySpends.length-1];
+  if(last&&last.label===label){last.amt=Math.round((last.amt+amt)*10)/10}
+  else S.daySpends.push({label:label||'Chi khác',amt});
+}
+function resetDaySpends(){S.daySpends=[];S.costToday=0}
 function stockOf(id){const v=S.stock&&S.stock[id];return v>0?Math.floor(+v||0):0}
 function onStockChanged(){
   S._wantsDirty=true;
@@ -4296,7 +4308,7 @@ function startNewDay(){
   }
   if(S.loan&&S.loan.remaining<=0){S.loan=null}
   if((S.money||0)<-50)S.money=0;
-  S.phase='prep';S.tab='kho';S.soldToday=0;S.leftToday=0;S.revenueToday=0;S.costToday=0;S.pending={};S.soldByMenu={};
+  S.phase='prep';S.tab='kho';S.soldToday=0;S.leftToday=0;S.revenueToday=0;S.costToday=0;S.daySpends=[];S.pending={};S.soldByMenu={};
   S.gameMin=OPEN_MIN;S.eventsToday=0;
   S.haggleLeft=3; // mỗi ngày 3 lượt trả giá
   S.haggleBestPct=0;
@@ -5462,7 +5474,7 @@ function finishBuy(baseCost,finalCost){
   const mon=Math.round((Number(S.money)||0)*10)/10;
   const need=Math.round((Number(finalCost)||0)*10)/10;
   if(need>mon+0.05){toast('Không đủ tiền! Có '+moneyStr(mon)+' — cần '+moneyStr(need)+'. Vào Ngân hàng vay rồi nhập lại.');sfx('bad');return}
-  S.money=Math.round((mon-need)*10)/10;S.costToday=Math.round(((S.costToday||0)+need)*10)/10;
+  S.money=Math.round((mon-need)*10)/10;addDayCost(need,'Nhập hàng (đi chợ)');
   for(const[k,v] of Object.entries(S.pending||{})){const add=Math.max(0,Math.floor(+v||0));if(!add)continue;S.stock[k]=Math.floor(+(S.stock[k]||0))+add;markStockIn(k,add)}
   S.pending={};
   sfx('buy');
@@ -5486,7 +5498,7 @@ function doStartSell(){
   if(cost>0){
     const mon=Math.round((Number(S.money)||0)*10)/10;
     if(cost>mon+0.05){toast('Không đủ tiền nhập hàng! Có '+moneyStr(mon)+' — cần '+moneyStr(cost));sfx('bad');return}
-    S.money=Math.round((mon-cost)*10)/10;S.costToday=Math.round(((S.costToday||0)+cost)*10)/10;
+    S.money=Math.round((mon-cost)*10)/10;addDayCost(cost,'Nhập hàng');
     for(const[k,v] of Object.entries(S.pending||{})){const add=Math.max(0,Math.floor(+v||0));if(!add)continue;S.stock[k]=Math.floor(+(S.stock[k]||0))+add;markStockIn(k,add)}
     S.pending={};sfx('buy');
   }
@@ -5987,7 +5999,7 @@ function showFarDeliveryOffer(mid, price){
   document.getElementById('fd-hire').onclick=()=>{
     sfx('buy');
     if(S.money<15){toast('Không đủ 15k thuê ship');return}
-    S.money-=15;S.costToday=(S.costToday||0)+15;
+    S.money-=15;addDayCost(15,'Thuê ship / giao hàng');
     const pay=price+Math.max(2,Math.floor(price*0.05));
     S.money+=pay;S.revenueToday+=pay;try{trackMenuSold((typeof cust!=="undefined"&&cust)?(cust.want||cust.wantMain):null)}catch(e){}try{trackMenuSold((typeof cust!=="undefined"&&cust)?(cust.want||cust.wantMain):null)}catch(e){}try{trackMenuSold((typeof cust!=="undefined"&&cust)?(cust.want||cust.wantMain):null)}catch(e){}try{trackMenuSold((typeof cust!=="undefined"&&cust)?(cust.want||cust.wantMain):null)}catch(e){}try{trackMenuSold((typeof cust!=="undefined"&&cust)?(cust.want||cust.wantMain):null)}catch(e){}S.soldToday++;
     const st=ensureShipStats();st.hire++;st.far++;st.earn+=pay;
@@ -6089,7 +6101,7 @@ function startDeliveryGame(mid, price){
     const st=ensureShipStats();st.self=(st.self||0)+1;st.far=(st.far||0)+1;st.hits=(st.hits||0)+hits;
     if(cold){
       // canh hơi nguội — phí + rating
-      if(S.money>=15){S.money-=15;S.costToday=(S.costToday||0)+15}
+      if(S.money>=15){S.money-=15;addDayCost(15,'Thuê ship / giao hàng')}
       pay=price;st.fail=(st.fail||0)+1;
       S.rating=Math.max(1.5,S.rating-0.08);
       S.reviews++;
@@ -6159,7 +6171,7 @@ function diChoRestock(){
   }
   if(!bought.length){toast('Kho vẫn đủ, chưa cần đi chợ');return}
   if(S.money<cost){toast('Không đủ tiền đi chợ ('+moneyStr(cost)+')');sfx('bad');return}
-  S.money-=cost;S.costToday=(S.costToday||0)+cost;
+  S.money-=cost;addDayCost(cost,'Nhập hàng');
   bought.forEach(b=>{S.stock[b.id]=(S.stock[b.id]||0)+b.q});
   S._diChoTrips++;S._diChoHinted=false;
   sfx('buy');toast('Cô Hương đi chợ +'+bought.length+' loại (−'+moneyStr(cost)+') · chuyến '+S._diChoTrips+'/4');
@@ -7175,7 +7187,7 @@ function doServe(){
     const take=Math.min(fine, mon);
     if(take>0){
       S.money=Math.round((mon-take)*10)/10;
-      S.costToday=Math.round(((S.costToday||0)+take)*10)/10;
+      addDayCost(take,'Chi khác');
     }
     S.rating=Math.max(1.5, (S.rating||4)-0.05);
     S.reviews++;
@@ -7865,7 +7877,7 @@ function endFoodRaid(ok, root){
   document.getElementById('raid-ok').onclick=()=>{
     S.money=Math.max(0, (S.money||0)-total);
     S.rating=Math.max(1.2, (S.rating||4)-starDrop);
-    S.costToday=(S.costToday||0)+total;
+    addDayCost(total,'Phạt hàng hết hạn');
     try{refreshKetUI()}catch(e){}
     save();
     sfx('bad');
@@ -9891,7 +9903,18 @@ function renderEnd(){
     <h2>⏰ Kết thúc Ngày ${S.day}</h2>
     <p style="text-align:center;font-size:12px;color:var(--ink2);margin:0 0 10px">Ca làm: 10:30 → 15:00</p>
     <div class="stat"><span>Doanh thu</span><strong style="color:#2E7D32">+${moneyStr(S.revenueToday)}</strong></div>
-    <div class="stat"><span>Chi phí nhập</span><strong style="color:#C62828">-${moneyStr(S.costToday)}</strong></div>
+    <div class="stat" style="flex-direction:column;align-items:stretch;gap:4px;text-align:left">
+      <div style="display:flex;justify-content:space-between"><span style="font-weight:800">Chi trong ngày</span><strong style="color:#C62828">-${moneyStr(S.costToday)}</strong></div>
+      <p style="font-size:10px;color:#8D6E63;margin:0;line-height:1.35">Đã trừ két lúc chi · cuối ngày chỉ thống kê, <b>không trừ lần 2</b>. Rửa đĩa miễn phí.</p>
+      ${(()=>{
+        const list=(S.daySpends&&S.daySpends.length)?S.daySpends:null;
+        if(list&&list.length){
+          return list.map(x=>`<div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0;border-bottom:1px dashed #FFE0E8"><span>${x.label}</span><strong style="color:#C62828">-${moneyStr(x.amt)}</strong></div>`).join('');
+        }
+        if((S.costToday||0)>0)return '<div style="font-size:11px;color:#8D6E63">Chi tiết không ghi (save cũ) · tổng −'+moneyStr(S.costToday)+'</div>';
+        return '<div style="font-size:11px;color:#8D6E63">Không phát sinh chi trong ngày</div>';
+      })()}
+    </div>
     ${wage?`<div class="stat"><span>Lương NV</span><strong style="color:#C62828">-${moneyStr(wage)}</strong></div>`:''}
     ${rent?`<div class="stat"><span>Thuê mặt bằng</span><strong style="color:#C62828">-${moneyStr(rent)}</strong></div>`:''}
     <div class="stat"><span>Thưởng nhiệm vụ</span><strong>+${moneyStr(bm)}</strong></div>
@@ -9961,14 +9984,17 @@ function renderEnd(){
   document.getElementById('btn-wash')?.addEventListener('click',()=>{
     const n=S.dirtyPlates||0;if(n<=0)return;
     modal.hidden=false;paused=true;
-    modal.innerHTML=`<div class="box" style="text-align:center"><h2>🧽 Đang rửa đĩa...</h2><p id="wash-p">0%</p></div>`;
-    let p=0;const t=setInterval(()=>{
+    modal.innerHTML=`<div class="box" style="text-align:center"><h2>🧽 Đang rửa đĩa...</h2>
+      <p style="font-size:12px;color:var(--ink2);margin:6px 0">Miễn phí · không trừ két · không tính chi phí nhập</p>
+      <p id="wash-p" style="font-weight:800">0%</p></div>`;
+    let p=0;const wt=setInterval(()=>{
       p+=Math.ceil(100/12);if(p>100)p=100;
       const el=document.getElementById('wash-p');if(el)el.textContent=p+'%';
       if(p>=100){
-        clearInterval(t);
+        clearInterval(wt);
         S.stock.hop=(S.stock.hop||0)+n;S.dirtyPlates=0;
-        toast('Đĩa sạch +'+n+' vào kho!');sfx('coin');
+        // Không trừ tiền, không addDayCost
+        toast('Đĩa sạch +'+n+' vào kho (miễn phí)!');sfx('coin');
         modal.hidden=true;paused=false;save();render();
       }
     },1000);
