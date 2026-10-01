@@ -3189,7 +3189,7 @@ function orderPhrase(cust){
 
 /* STATE */
 const defaultState=()=>({
-  day:1,phase:'splash',money:500,xp:0,level:1,shopName:'Cơm Trưa Ngon',
+  day:1,phase:'splash',money:800,xp:0,level:1,shopName:'Cơm Trưa Ngon',
   rating:4.0,reviews:0,stock:{},prices:{},upgrades:{},decor:[],
   quests:[],soldToday:0,leftToday:0,revenueToday:0,costToday:0,shipStats:{online:0,far:0,hire:0,self:0,hits:0,earn:0,fail:0},
   tutStep:0,acceptedTerms:false,tab:'kho',pending:{},
@@ -5654,9 +5654,9 @@ function menuMainIng(mid){
 }
 function menuFamily(mid){
   const ing=menuMainIng(mid)||'';
-  if(/thit|suon|ga|long|cha_lua|dau_hu/.test(ing))return 'man';
-  if(/ca|cha_ca/.test(ing))return 'ca';
   if(/canh|kho_qua/.test(ing))return 'canh';
+  if(/(^|_)(thit|suon|ga|long|cha_lua|dau_hu)(_|$)/.test(ing))return 'man';
+  if(/(^|_)(ca|cha_ca)(_|$)/.test(ing)||ing==='cha_ca'||ing.startsWith('ca_'))return 'ca';
   if(/trung/.test(ing))return 'trung';
   return 'khac';
 }
@@ -6625,7 +6625,10 @@ cooker.className='cooker'+(cooking?' active':'');
     ckC.className='cooker'+(box.canh?'': '');
     ckC.innerHTML=`<div class="ck-icon ap-canh">${AP_SOUP}</div><div class="ck-label">${box.canh?'Có canh':'Múc canh'}</div>
       <span class="ck-q ${cq<=0?'z':''}">${cq}</span>`;
-    ckC.onclick=()=>doScoopCanh();
+    const wantScoopCanh=tables[selectedTable]&&MENU[tables[selectedTable].want]
+      ? MENU[tables[selectedTable].want].need.find(n=>INGREDIENTS[n]?.role==='canh')
+      : null;
+    ckC.onclick=()=>doScoopCanh(wantScoopCanh);
   }
 
   const bowl=document.getElementById('bowl');
@@ -6911,11 +6914,13 @@ function doScoopCanh(preferId){
   for(const id of ['canh_thuong','canh_chua','canh_kho_qua']){
     if(stockOf(id)>0&&isIngExpired(id)){S.stock[id]=0;if(S.stockAge)delete S.stockAge[id]}
   }
-  const order=['canh_thuong','canh_chua','canh_kho_qua'];
-  let pick=preferId||null;
-  if(pick&&(stockOf(pick)<=0||isIngExpired(pick)))pick=null;
+  const cust=tables[selectedTable];
+  const orderCanh=(MENU[cust?.want]?.need||[]).find(n=>INGREDIENTS[n]?.role==='canh')||null;
+  const fallback=['canh_thuong','canh_chua','canh_kho_qua'];
+  let pick=preferId||orderCanh||null;
+  if(pick&&(stockOf(pick)<=0||isIngExpired(pick)||!isIngUnlocked(pick)))pick=null;
   if(!pick){
-    pick=order.find(id=>isIngUnlocked(id)&&stockOf(id)>0&&!isIngExpired(id))||null;
+    pick=fallback.find(id=>isIngUnlocked(id)&&stockOf(id)>0&&!isIngExpired(id))||null;
   }
   if(!pick){
     pick=Object.keys(INGREDIENTS).find(id=>INGREDIENTS[id].role==='canh'&&stockOf(id)>0&&!isIngExpired(id))||null;
@@ -6968,6 +6973,15 @@ function doAddTop(id){
     try{revalidateAllCustWants()}catch(e){}save();updateSell();return;
   }
   const role=INGREDIENTS[id].role;
+  if(role==='canh'||isCanhId(id)){
+    if(box.canh){toast('Đã có bát canh');sfx('bad');return}
+    S.stock[id]--;box.canh=id;
+    sfx('add');saveDebounced();
+    try{revalidateAllCustWants()}catch(e){}
+    updateSell();advanceCookGuide('main');
+    tryAutoServe();
+    return;
+  }
   if(role==='main'){if(box.mains.length>=1){toast('Chỉ 1 món mặn');sfx('bad');return}S.stock[id]--;box.mains.push(id)}
   else{if(box.sides.length>=2){toast('Đủ topping');sfx('bad');return}if(box.sides.includes(id)){toast('Đã thêm rồi');sfx('bad');return}S.stock[id]--;box.sides.push(id)}
   if(role==='main')applyQuayHelp(tables[selectedTable]);
@@ -7004,22 +7018,33 @@ function doTrash(){
   try{revalidateAllCustWants()}catch(e){}
   updateSell();
 }
+function plateHasCanh(n){
+  return box.canh===n||(box.sides||[]).includes(n)||(box.mains||[]).includes(n);
+}
+function boxMatchesMenu(mid){
+  const m=MENU[mid];if(!m)return false;
+  const need=m.need.filter(x=>x!=='hop'&&x!=='gao');
+  for(const n of need){
+    const role=INGREDIENTS[n]?.role;
+    if(n==='trung'){if(!box.sides.includes('trung')&&!box.mains.includes('trung'))return false}
+    else if(role==='canh'||isCanhId(n)){if(!plateHasCanh(n))return false}
+    else if(role==='main'){if(!box.mains.includes(n))return false}
+    else if(role==='side'){if(!box.sides.includes(n))return false}
+    else if(!box.mains.includes(n)&&!box.sides.includes(n)&&!plateHasCanh(n))return false;
+  }
+  return true;
+}
 function matchBox(){
+  const cust=tables[selectedTable];
+  if(cust&&MENU[cust.want]&&isMenuUnlocked(cust.want)&&boxMatchesMenu(cust.want))return cust.want;
+  let best=null,bestNeed=-1;
   for(const[id,m] of Object.entries(MENU)){
     if(!isMenuUnlocked(id))continue;
-    const need=m.need.filter(x=>x!=='hop'&&x!=='gao');let ok=true;
-    for(const n of need){
-      const role=INGREDIENTS[n]?.role;
-      if(n==='trung'){if(!box.sides.includes('trung')&&!box.mains.includes('trung'))ok=false}
-      else if(role==='canh'){if(box.canh!==n)ok=false}
-      else if(role==='main'){if(!box.mains.includes(n))ok=false}
-      else if(role==='side'){if(!box.sides.includes(n))ok=false}
-      else if(!box.mains.includes(n)&&!box.sides.includes(n)&&box.canh!==n)ok=false;
-    }
-    // không bắt buộc tương ớt cho cơm — tương chỉ theo order cay / wantSauce
-    if(ok)return id;
+    if(!boxMatchesMenu(id))continue;
+    const nNeed=(m.need||[]).filter(x=>x!=='hop'&&x!=='gao').length;
+    if(nNeed>bestNeed){best=id;bestNeed=nNeed}
   }
-  return null;
+  return best;
 }
 
 function applySupportStaff(cust){
@@ -7039,7 +7064,7 @@ function applySupportStaff(cust){
     for(const n of need){
       if(n==='hop'||n==='gao')continue;
       const role=INGREDIENTS[n]?.role;
-      if(role==='side'||n==='trung'){
+      if((role==='side'||n==='trung')&&role!=='canh'&&!isCanhId(n)){
         if(!box.sides.includes(n)&&!box.mains.includes(n)&&stockOf(n)>0){
           S.stock[n]--;box.sides.push(n);helped=true;
         }
@@ -7051,8 +7076,9 @@ function applySupportStaff(cust){
         S.stock[n]--;box.canh=n;helped=true;
       }
     }
-    // canh thường nếu suất cần canh
-    if(!box.canh&&stockOf('canh_thuong')>0){
+    // canh thường nếu suất không chỉ định loại canh riêng
+    const needCanh=(MENU[cust.want]?.need||[]).find(n=>INGREDIENTS[n]?.role==='canh');
+    if(!box.canh&&!needCanh&&stockOf('canh_thuong')>0){
       S.stock.canh_thuong--;box.canh='canh_thuong';helped=true;
     }
   }
@@ -7075,7 +7101,7 @@ function plateMatchesOrder(){
   if(matchBox()!==cust.want)return false;
   if(cust.extraSide&&!box.sides.includes(cust.extraSide))return false;
   const orderNeed=new Set((MENU[cust.want]?.need)||[]);
-  if(box.sides.some(x=>x!==cust.extraSide&&!orderNeed.has(x)))return false;
+  if(box.sides.some(x=>x!==cust.extraSide&&!orderNeed.has(x)&&!(isCanhId(x)||INGREDIENTS[x]?.role==='canh')))return false;
   if(cust.wantMam&&!(box.mamTom>0))return false;
   return true;
 }
@@ -7110,6 +7136,18 @@ function doServe(){
   const cust=tables[selectedTable];
   if(!cust||!box.hasBox||!box.hasRice)return;
   if(cust.outOfStock){refreshCustWant(cust);cust.outOfStock=false;delete cust.swapFrom}
+  // Canh bấm từ khay topping đôi khi nằm ở sides/mains — gom về bát canh trước khi NV phụ
+  if(!box.canh){
+    const stray=(box.sides||[]).concat(box.mains||[]).find(id=>isCanhId(id)||INGREDIENTS[id]?.role==='canh');
+    if(stray){
+      box.canh=stray;
+      box.sides=(box.sides||[]).filter(id=>id!==stray);
+      box.mains=(box.mains||[]).filter(id=>id!==stray);
+    }
+  }else{
+    box.sides=(box.sides||[]).filter(id=>!(isCanhId(id)||INGREDIENTS[id]?.role==='canh'));
+    box.mains=(box.mains||[]).filter(id=>!(isCanhId(id)||INGREDIENTS[id]?.role==='canh'));
+  }
   applySupportStaff(cust);
   advanceCookGuide('serve');
   const matched=matchBox();
@@ -7117,7 +7155,7 @@ function doServe(){
   const sideOk=!cust.extraSide||box.sides.includes(cust.extraSide);
   // Nguyên liệu nằm trong order (vd trứng của Cơm trứng) không tính là topping thừa
   const orderNeed=new Set((MENU[cust.want]?.need)||[]);
-  const extraOnly=box.sides.filter(s=>s!==cust.extraSide&&!orderNeed.has(s));
+  const extraOnly=box.sides.filter(s=>s!==cust.extraSide&&!orderNeed.has(s)&&!(isCanhId(s)||INGREDIENTS[s]?.role==='canh'));
   const sideExtraOk=extraOnly.length===0;
   const mamOk=!cust.wantMam||box.mamTom>0;
   // Suất cơm luôn cần canh (không order riêng)
