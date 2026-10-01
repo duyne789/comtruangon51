@@ -1773,6 +1773,10 @@
     .swap-btn:active{transform:translateY(2px);box-shadow:none}
     .swap-no{width:100%;padding:6px;border:1.5px dashed #B0BEC5;border-radius:10px;background:transparent;color:#78909C;font-weight:700;font-size:11px}
     body.dark .swap-btn{background:#3a3020;color:#ffe0b2;border-color:#8d6e3f;box-shadow:0 2px 0 #5a4520}
+
+    /* Thông báo mới nhất nảy nhẹ để dễ nhận ra là cái mới */
+    #toast.pop{animation:toastPop .22s ease-out}
+    @keyframes toastPop{0%{transform:translateX(-50%) scale(.92)}100%{transform:translateX(-50%) scale(1)}}
   </style>
 </head>
 <body>
@@ -1808,32 +1812,47 @@ function allAnnouncementList(){
     id:a.id,
     title:a.title,
     body:a.body,
-    date:a.date_label||a.date||''
+    date:a.date_label||a.date||'',
+    ts:Date.parse(a.created_at||'')||0,
+    views:Number(a.views)||0
   }));
-  const local=ANNOUNCEMENTS||[];
+  // Bản tin cứng trong code: thêm sau cùng = mới hơn (nếu không có mốc thời gian)
+  const local=(ANNOUNCEMENTS||[]).map((a,i)=>a&&Object.assign({},a,{ts:Date.parse(a.created_at||a.ts||'')||(i+1)}));
   const seen={};
   const out=[];
   for(const a of cloud.concat(local)){
     if(!a||!a.id||seen[a.id])continue;
     seen[a.id]=1;out.push(a);
   }
-  return out;
+  // Mới nhất trước (cùng mốc thì giữ nguyên thứ tự: cloud đã sắp mới→cũ)
+  return out.map((a,i)=>({a,i})).sort((x,y)=>((y.a.ts||0)-(x.a.ts||0))||(x.i-y.i)).map(x=>x.a);
 }
 function pendingAnnouncements(){
+  const all=allAnnouncementList();
+  if(!all.length)return [];
   const st=loadAnnState();
   const now=Date.now();
-  return allAnnouncementList().filter(a=>{
-    if(!a||!a.id)return false;
-    if(st.dismissed&&st.dismissed[a.id])return false;
-    const until=(st.snoozeUntil&&st.snoozeUntil[a.id])||0;
-    if(until>now)return false;
-    return true;
-  });
+  const latest=all[0];
+  // Có thông báo mới nhất → mọi thông báo cũ hơn không hiện nữa
+  if(all.length>1){
+    if(!st.dismissed)st.dismissed={};
+    let changed=false;
+    for(let i=1;i<all.length;i++){
+      const id=all[i].id;
+      if(!st.dismissed[id]){st.dismissed[id]=true;changed=true}
+      if(st.snoozeUntil&&st.snoozeUntil[id]){delete st.snoozeUntil[id];changed=true}
+    }
+    if(changed)saveAnnState(st);
+  }
+  if(st.dismissed&&st.dismissed[latest.id])return [];
+  const until=(st.snoozeUntil&&st.snoozeUntil[latest.id])||0;
+  if(until>now)return [];
+  return [latest];
 }
 async function fetchCloudAnnouncements(){
   if(!SB_OK())return;
   try{
-    const r=await sbFetch('/rest/v1/game_announcements?select=id,title,body,date_label,active,created_at&active=eq.true&order=created_at.desc');
+    const r=await sbFetch('/rest/v1/game_announcements?select=id,title,body,date_label,active,created_at,views&active=eq.true&order=created_at.desc');
     if(r&&r.ok&&Array.isArray(r.data)){
       window._cloudAnns=r.data;
     }
@@ -1850,6 +1869,30 @@ function dismissAnn(id, hours){
     delete st.snoozeUntil[id];
   }
   saveAnnState(st);
+}
+async function bumpAnnView(id){
+  if(!id||!SB_OK())return;
+  try{
+    const st=loadAnnState();
+    if(!st.viewed)st.viewed={};
+    if(st.viewed[id])return;
+    st.viewed[id]=Date.now();
+    saveAnnState(st);
+    let r=await sbFetch('/rest/v1/rpc/bump_ann_view',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({p_id:String(id)})
+    });
+    if(r&&r.ok)return;
+    const get=await sbFetch('/rest/v1/game_announcements?id=eq.'+encodeURIComponent(id)+'&select=views',{method:'GET',headers:{'Accept':'application/json'}});
+    let v=0;
+    if(get&&get.ok&&Array.isArray(get.data)&&get.data[0])v=Number(get.data[0].views)||0;
+    await sbFetch('/rest/v1/game_announcements?id=eq.'+encodeURIComponent(id),{
+      method:'PATCH',
+      headers:{'Prefer':'return=minimal','Content-Type':'application/json'},
+      body:JSON.stringify({views:v+1})
+    });
+  }catch(e){}
 }
 function showAnnModal(list){
   list=list||pendingAnnouncements();
@@ -1869,6 +1912,7 @@ function showAnnModal(list){
       '<div style="flex:1">'+
         '<div style="font-size:11px;color:#9A8B7A;font-weight:700">'+(a.date||'')+(rest>0?' · +'+rest+' thông báo nữa':'')+'</div>'+
         '<h2 style="margin:2px 0 0;text-align:left;font-size:17px">'+(a.title||'Thông báo')+'</h2>'+
+        '<div style="font-size:11px;color:#8D6E63;font-weight:700;margin-top:3px">👁 '+((a.views|0)>0?(a.views|0):'—')+' người đã xem</div>'+
       '</div>'+
     '</div>'+
     '<div style="background:#FFF8F0;border:1.5px solid #FFE0B2;border-radius:14px;padding:12px;font-size:13px;line-height:1.55;color:#4A3F35;max-height:40vh;overflow:auto">'+bodyHtml+'</div>'+
@@ -1877,6 +1921,7 @@ function showAnnModal(list){
       '<button type="button" class="menu-btn" id="ann-close" style="margin:0">Đóng</button>'+
     '</div>'+
   '</div>';
+  try{bumpAnnView(a.id)}catch(e){}
   function next(){
     var left=pendingAnnouncements();
     if(left.length)showAnnModal(left);
@@ -1902,7 +1947,7 @@ function showAllAnnouncements(){
   var items=allAnnouncementList().length?allAnnouncementList().map(function(a){
     var body=String(a.body||'').split('\n').map(function(l){return '<div>'+String(l).replace(/</g,'&lt;')+'</div>'}).join('');
     return '<div style="background:#FFF8F0;border:1.5px solid #FFE0E8;border-radius:12px;padding:10px;margin-bottom:8px">'+
-      '<div style="font-size:11px;color:#9A8B7A;font-weight:700">'+(a.date||'')+'</div>'+
+      '<div style="font-size:11px;color:#9A8B7A;font-weight:700">'+(a.date||'')+' · 👁 '+((a.views|0)>0?(a.views|0):0)+' đã xem</div>'+
       '<div style="font-weight:800;color:#E84A6F;margin:2px 0 6px">'+(a.title||'')+'</div>'+
       '<div style="font-size:12px;line-height:1.5;color:#4A3F35">'+body+'</div></div>';
   }).join(''):'<p style="text-align:center;color:#9A8B7A">Chưa có thông báo</p>';
@@ -2941,12 +2986,12 @@ const UPGRADES=[
   {id:'tu',name:'Tủ nóng',desc:'Tip cao hơn mỗi suất',cost:280,max:2,cat:'bep'},
   {id:'bep_lua',name:'Bếp lửa lớn',desc:'Cơm chín nhanh · vùng nấu rộng',cost:450,max:1,cat:'bep',needLv:5},
   // ===== Nhân viên =====
-  {id:'nv_pro',name:'👨‍🍳 Phụ bếp 1',desc:'Bạn lấy đĩa & giao món. NV tự múc cơm/canh/topping đúng order (~90%), nấu nhanh. · 150k/ngày',cost:420,max:1,cat:'nv',wage:150,exclusive:'bep_nv',correctRate:0.9,needLv:3},
-  {id:'nv_cheap',name:'🧑‍🍳 Phụ bếp 2',desc:'Bạn lấy đĩa & giao món. NV phụ nấu, đúng món ~75%. · 50k/ngày',cost:180,max:1,cat:'nv',wage:50,exclusive:'bep_nv',correctRate:0.75},
+  {id:'nv_pro',name:'👨‍🍳 Phụ bếp 1',desc:'Bạn tự lấy đĩa. NV tự múc cơm/canh/topping đúng order (~95%), nấu nhanh. · 150k/ngày',cost:420,max:1,cat:'nv',wage:150,exclusive:'bep_nv',correctRate:0.95,needLv:3},
+  {id:'nv_cheap',name:'🧑‍🍳 Phụ bếp 2',desc:'Bạn tự lấy đĩa. NV phụ nấu, đúng món ~80%. · 50k/ngày',cost:180,max:1,cat:'nv',wage:50,exclusive:'bep_nv',correctRate:0.8},
   {id:'thu_ngan',name:'💰 Chị Hà · Thu ngân',desc:'Đứng quầy: khách không quỵt được tiền. · Lương 50k/ngày',cost:320,max:1,cat:'nv',wage:50,needLv:3},
   {id:'phuc_vu',name:'🙂 Bé Lan · Chạy bàn',desc:'Khách kiên nhẫn hơn, ít bỏ về. · Lương 60k/ngày',cost:280,max:2,cat:'nv',wage:60,needLv:4},
   {id:'nhan_vien',name:'🪑 Thêm bàn ngồi',desc:'+1 chỗ khách (tối đa 2)',cost:250,max:2,cat:'nv'},
-  {id:'tu_giao',name:'🤖 Tự giao suất',desc:'Làm xong đĩa đúng order → tự giao món. Mở từ cấp 3',cost:300,max:1,cat:'nv',needLv:3},
+  {id:'tu_giao',name:'🤖 Tự giao suất',desc:'Làm xong đĩa đúng order → giao NGAY, không cần bấm. Mở từ cấp 3',cost:300,max:1,cat:'nv',needLv:3},
   {id:'di_cho',name:'🧺 Cô Hương · Đi chợ',desc:'Hết món giữa ca: mua gấp 5 phần giá thường, tối đa 4 chuyến/ngày. · Lương 70k/ngày',cost:380,max:1,cat:'nv',wage:70,needLv:5},
   {id:'nv_sot',name:'🧂 Anh Tú · Phụ sốt',desc:'Tự thêm tương ớt / mắm khi khách cần. · Lương 80k/ngày',cost:420,max:1,cat:'nv',wage:80,needLv:6},
   {id:'nv_topping',name:'🥬 Bé Ổi · Phụ topping',desc:'Tự gắp topping đúng order khi đã có cơm. · Lương 90k/ngày',cost:480,max:1,cat:'nv',wage:90,needLv:7},
@@ -3233,7 +3278,7 @@ if(!S.decor)S.decor=[];if(!S.pending)S.pending={};if(!S.reviewList)S.reviewList=
 const RANDOM_EVENTS=[
   // tiêu cực
   {id:'quyt',neg:true,w:3,title:'Khách quỵt tiền!',msg:(c,amt)=>`${c} chạy mất không trả tiền (−${amt}k)`,run:(c,amt)=>{if(S.upgrades.thu_ngan){toast('Thu ngân chặn được vụ quỵt!');sfx('coin');return 'blocked'}S.money=Math.max(0,S.money-amt);S.revenueToday=Math.max(0,S.revenueToday-amt);sfx('bad')}},
-  {id:'trom',neg:true,w:2,title:'Bị móc két!',msg:()=>{const pct=Math.random()<0.5?0.5:0.6;const loss=Math.max(1,Math.floor((S.money||0)*pct));return `Có kẻ lẻn móc két (−${loss}k · ~${Math.round(pct*100)}% két)`;},run:()=>{if(S.upgrades.thu_ngan){toast('Chị Hà (thu ngân) phát hiện kẻ móc két!');sfx('coin');return 'blocked'}const pct=Math.random()<0.5?0.5:0.6;const loss=Math.max(1,Math.floor((S.money||0)*pct));S.money=Math.max(0,S.money-loss);sfx('bad');try{refreshKetUI()}catch(e){}return loss}},
+  {id:'ongba',neg:false,w:3,title:'Người già xin giúp!',msg:()=>'Có cụ già đứng ngoài quán xin tiền hoặc suất cơm…',run:()=>{}},
   {id:'do_com',neg:true,w:2,title:'Khách đổ cơm!',msg:(c)=>`${c} làm đổ suất cơm, đòi đền (−8k)`,run:()=>{S.money=Math.max(0,S.money-8);S.costToday+=8;sfx('bad')}},
   {id:'mat_dien',neg:true,w:2,title:'Mất điện tạm!',msg:()=>'Mất điện 1 lúc, vài khách bỏ về',run:()=>{S.leftToday+=1;S.rating=Math.max(1.5,S.rating-0.03);sfx('bad')}},
   {id:'chuot',neg:true,w:1,title:'Chuột phá kho!',msg:()=>'Chuột gặm mất ít nguyên liệu',run:()=>{const keys=Object.keys(S.stock).filter(k=>(S.stock[k]||0)>2);if(keys.length){const k=keys[Math.floor(Math.random()*keys.length)];S.stock[k]=Math.max(0,S.stock[k]-2)}sfx('bad')}},
@@ -3395,9 +3440,8 @@ function tryRandomEvent(custName,paidAmt){
         };
       }
     }
-  }else if(picked.id==='trom'){
-    const loss=picked.run();
-    showEventModal(picked.title,picked.msg(),picked.neg);
+  }else if(picked.id==='ongba'){
+    showElderlyAsk();
   }else if(picked.id==='boa'){
     const tip=5+Math.floor(Math.random()*10);
     picked.run(custName,tip);
@@ -3412,6 +3456,61 @@ function tryRandomEvent(custName,paidAmt){
   if(S.eventLog.length>20)S.eventLog.length=20;
   save();
 }
+
+function showElderlyAsk(){
+  if(S.phase!=='sell'&&S.phase!=='prep')return;
+  modal.hidden=false;
+  try{paused=true}catch(e){}
+  const mon=Math.max(0,Math.round((Number(S.money)||0)*10)/10);
+  const giveMoney=Math.min(15, Math.max(3, Math.round(mon*0.02*10)/10)); // ~2% két, max 15k
+  const hasRice=(stockOf('gao')||0)>=1 || (stockOf('hop')||0)>=1;
+  const hasFood=Object.keys(MENU).some(mid=>canOrderMenu(mid));
+  modal.innerHTML=`<div class="box" style="text-align:center">
+    <div style="font-size:48px">👵</div>
+    <h2>Người già xin giúp</h2>
+    <p style="font-size:13px;color:var(--ink2);line-height:1.5;margin:8px 0 12px">
+      Một cụ già đứng ngoài quán, nói nhỏ:<br>
+      <i>"Cháu ơi… cho cụ xin ít tiền hoặc suất cơm được không?"</i>
+    </p>
+    <p style="font-size:11px;color:#8D6E63;margin:0 0 10px">Két: <b>${moneyStr(mon)}</b></p>
+    <button class="menu-btn primary" id="el-money" ${mon>=giveMoney?'':'disabled style="opacity:.4"'}>💰 Cho ${moneyStr(giveMoney)} tiền</button>
+    <button class="menu-btn" id="el-food" ${hasFood||hasRice?'':'disabled style="opacity:.4"'}>🍚 Cho 1 suất / ít cơm</button>
+    <button class="menu-btn" id="el-no" style="background:#FFF3E0">🙅 Không cho</button>
+  </div>`;
+  const close=()=>{modal.hidden=true;try{paused=false}catch(e){};if(S.phase==='sell')try{updateSell()}catch(e){}};
+  document.getElementById('el-money').onclick=()=>{
+    if(S.money<giveMoney){toast('Không đủ tiền');sfx('bad');return}
+    S.money=Math.round((S.money-giveMoney)*10)/10;
+    S.costToday=Math.round(((S.costToday||0)+giveMoney)*10)/10;
+    S.rating=Math.min(5,(S.rating||4)+0.04);
+    S.eventLog.unshift({day:S.day,id:'ongba_money',title:'Cho người già '+giveMoney+'k',neg:false,time:''});
+    toast('Cụ cảm ơn, chúc quán làm ăn tấn tới 🙏');sfx('coin');
+    try{refreshKetUI()}catch(e){}
+    close();save();
+  };
+  document.getElementById('el-food').onclick=()=>{
+    // ưu tiên trừ gạo / đĩa stock nhẹ, không cần đủ full order
+    if((S.stock.gao||0)>=1){S.stock.gao--}
+    else if((S.stock.hop||0)>=1){S.stock.hop--}
+    else if(hasFood){
+      // trừ 1 nguyên liệu món rẻ nếu có
+      const keys=Object.keys(S.stock||{}).filter(k=>(S.stock[k]||0)>0&&k!=='hop');
+      if(keys.length)S.stock[keys[0]]=Math.max(0,(S.stock[keys[0]]||0)-1);
+      else {toast('Hết đồ để cho');sfx('bad');return}
+    }else{toast('Hết đồ để cho');sfx('bad');return}
+    S.rating=Math.min(5,(S.rating||4)+0.06);
+    S.eventLog.unshift({day:S.day,id:'ongba_food',title:'Cho người già suất cơm',neg:false,time:''});
+    toast('Cụ nhận cơm, mỉm cười cảm ơn 🍚');sfx('quest');
+    close();save();
+  };
+  document.getElementById('el-no').onclick=()=>{
+    S.rating=Math.max(1.5,(S.rating||4)-0.03);
+    S.eventLog.unshift({day:S.day,id:'ongba_no',title:'Từ chối người già xin giúp',neg:true,time:''});
+    toast('Cụ lặng lẽ đi…');sfx('bad');
+    close();save();
+  };
+}
+
 function showEventModal(title,msg,neg){
   // toast dài hơn + popup nhẹ
   toast((neg?'⚠️ ':'✨ ')+title);
@@ -3464,7 +3563,27 @@ function saveNow(){
 
 
 function timeStr(m){const h=Math.floor(m/60)%24,mi=m%60;return (h<10?'0':'')+h+':'+(mi<10?'0':'')+mi}
-function toast(msg){const el=document.getElementById('toast');el.textContent=msg;el.classList.add('show');clearTimeout(toast._t);toast._t=setTimeout(()=>el.classList.remove('show'),1600)}
+/** Thông báo: CHỈ hiện thông báo mới nhất — thông báo cũ bị thay thế ngay (không xếp hàng, không chồng, không mờ dần lẫn nhau) */
+let _toastLast='',_toastLastAt=0;
+function toast(msg){
+  const el=document.getElementById('toast');if(!el)return;
+  msg=(msg==null)?'':String(msg);
+  if(!msg)return;
+  const now=Date.now();
+  clearTimeout(toast._t);
+  // Cùng nội dung bắn liên tục → chỉ gia hạn thời gian hiện, không nháy lại
+  const same=(msg===_toastLast&&el.classList.contains('show')&&now-_toastLastAt<1600);
+  _toastLast=msg;_toastLastAt=now;
+  if(!same){
+    const wasShown=el.classList.contains('show');
+    el.classList.remove('pop');
+    el.textContent=msg;                // thay chữ ngay → thông báo cũ biến mất tức thì
+    if(!wasShown){el.classList.add('show')}   // đang hiện sẵn thì giữ nguyên độ sáng, không mờ lại từ đầu
+    void el.offsetWidth;               // ép vẽ lại để hiệu ứng nảy của thông báo mới chạy từ đầu
+    el.classList.add('pop');
+  }
+  toast._t=setTimeout(()=>{el.classList.remove('show','pop');_toastLast=''},1600);
+}
 function moneyStr(n){n=Math.round(n*10)/10;return n>=1000?(n/1000).toFixed(n%1000===0?0:1)+'tr':n+'k'}
 
 
@@ -4244,8 +4363,8 @@ function showBaoKe(){
   if(S.phase!=='prep')return;
   modal.hidden=false;
   const mon=Math.max(0, Math.round((Number(S.money)||0)*10)/10);
-  // Đóng 40% két hiện có (tối thiểu 0)
-  const fee=Math.round(mon*0.4*10)/10;
+  // Đóng 10% két hiện có (tối thiểu 0)
+  const fee=Math.round(mon*0.1*10)/10;
   const canPay=mon>0&&fee>0;
   const feeStr=moneyStr(fee);
   modal.innerHTML=`<div class="box" style="text-align:center">
@@ -4253,22 +4372,22 @@ function showBaoKe(){
     <h2>Đại ca bảo kê!</h2>
     <p style="font-size:13px;color:var(--ink2);margin:8px 0 14px;line-height:1.5">
       Một gã giang hồ bước vào quán:<br>
-      <i>"Quán này muốn yên ổn thì nộp <b style="color:#E84A6F">40% két</b> bảo kê<br>(= <b style="color:#E84A6F">${feeStr}</b>)."</i>
+      <i>"Quán này muốn yên ổn thì nộp <b style="color:#E84A6F">10% két</b> bảo kê<br>(= <b style="color:#E84A6F">${feeStr}</b>)."</i>
     </p>
     <p style="font-size:12px;color:var(--ink2);margin:0 0 10px">Két hiện có: <b>${moneyStr(mon)}</b> · Bảo kê: <b style="color:#E84A6F">${feeStr}</b></p>
-    <button class="menu-btn primary" id="bk-pay" ${canPay?'':'disabled style="opacity:.4;pointer-events:none"'}>💰 Đóng ${feeStr} bảo kê (40%)</button>
+    <button class="menu-btn primary" id="bk-pay" ${canPay?'':'disabled style="opacity:.4;pointer-events:none"'}>💰 Đóng ${feeStr} bảo kê (10%)</button>
     ${!canPay?'<p style="font-size:11px;color:#E84A6F;margin:4px 0 8px">Két trống — không thu được</p>':''}
     <button class="menu-btn" id="bk-scold" style="background:linear-gradient(135deg,#FF8A65,#FF7043);color:#fff">🤬 Chửi cho một trận</button>
     <button class="menu-btn danger" id="bk-kick">😤 Đuổi hắn ra</button>
   </div>`;
   document.getElementById('bk-pay').onclick=()=>{
     const m=Math.max(0, Math.round((Number(S.money)||0)*10)/10);
-    const take=Math.round(m*0.4*10)/10;
+    const take=Math.round(m*0.1*10)/10;
     if(take<=0){toast('Két trống!');sfx('bad');modal.hidden=true;return}
     S.money=Math.round((m-take)*10)/10;
     S.costToday=Math.round(((S.costToday||0)+take)*10)/10;
     S.baoKePaid=true;
-    S.eventLog.unshift({day:S.day,id:'baoke_pay',title:'Đóng bảo kê '+take+'k (40%)',neg:true,time:''});
+    S.eventLog.unshift({day:S.day,id:'baoke_pay',title:'Đóng bảo kê '+take+'k (10%)',neg:true,time:''});
     toast('Đã đóng bảo kê '+moneyStr(take)+'. Quán tạm yên.');sfx('buy');
     modal.hidden=true;save();render();
   };
@@ -4960,7 +5079,7 @@ document.getElementById('st-backup').onclick=()=>{
             <li>Điều tra camera khi khách quỵt tiền</li>
             <li>Két 0k: vay bank hoặc xã hội đen (chỉ 1 lần tổng) · sau đó 0k = phá sản</li>
             <li>Két cập nhật realtime khi cược</li>
-            <li>Móc két trộm 50–60% két</li>
+            <li>Sự kiện người già xin tiền/cơm</li>
             <li>Liên hệ: Threads + nhóm Zalo</li>
           </ul>
         </div>
@@ -5441,7 +5560,7 @@ function finishBuy(baseCost,finalCost){
   const need=Math.round((Number(finalCost)||0)*10)/10;
   if(need>mon+0.05){toast('Không đủ tiền! Có '+moneyStr(mon)+' — cần '+moneyStr(need)+'. Vào Ngân hàng vay rồi nhập lại.');sfx('bad');return}
   S.money=Math.round((mon-need)*10)/10;S.costToday=Math.round(((S.costToday||0)+need)*10)/10;
-  for(const[k,v] of Object.entries(S.pending||{})){S.stock[k]=(S.stock[k]||0)+v;if(v>0)markStockIn(k,v)}
+  for(const[k,v] of Object.entries(S.pending||{})){const add=Math.max(0,Math.floor(+v||0));if(!add)continue;S.stock[k]=Math.floor(+(S.stock[k]||0))+add;markStockIn(k,add)}
   S.pending={};
   sfx('buy');
   const saved=Math.round((baseCost-finalCost)*10)/10;
@@ -5465,7 +5584,7 @@ function doStartSell(){
     const mon=Math.round((Number(S.money)||0)*10)/10;
     if(cost>mon+0.05){toast('Không đủ tiền nhập hàng! Có '+moneyStr(mon)+' — cần '+moneyStr(cost));sfx('bad');return}
     S.money=Math.round((mon-cost)*10)/10;S.costToday=Math.round(((S.costToday||0)+cost)*10)/10;
-    for(const[k,v] of Object.entries(S.pending)){S.stock[k]=(S.stock[k]||0)+v;if(v>0)markStockIn(k,v)}
+    for(const[k,v] of Object.entries(S.pending||{})){const add=Math.max(0,Math.floor(+v||0));if(!add)continue;S.stock[k]=Math.floor(+(S.stock[k]||0))+add;markStockIn(k,add)}
     S.pending={};sfx('buy');
   }
   if(!hasAnyStock()){toast('Chưa có hàng trong kho');sfx('bad');return}
@@ -5710,6 +5829,27 @@ function markWantsDirty(){S._wantsDirty=true}
  * Hết 1 món → đổi order. Chỉ bỏ về khi hết SẠCH.
  * Gọi khi: kho đổi / dirty flag / sau giao món.
  */
+let _toppingToastAt=0;
+/** Topping thêm / mắm tôm đã hết (và chưa nằm trên đĩa) → khách bỏ yêu cầu đó, order còn lại giữ nguyên */
+function dropUnavailableToppings(c){
+  if(!c)return false;
+  const cur=(tables&&tables[selectedTable]===c);
+  let dropped='';
+  if(c.extraSide){
+    const id=c.extraSide,gone=(stockOf(id)<=0||isIngExpired(id))&&!(cur&&plateHas(id));
+    if(gone){dropped=INGREDIENTS[id]?.name||id;c.extraSide=null}
+  }
+  if(c.wantMam){
+    const gone=(stockOf('mam_tom')<=0||isIngExpired('mam_tom'))&&!(cur&&box&&box.mamTom>0);
+    if(gone){dropped=dropped?dropped+', Mắm tôm':'Mắm tôm';c.wantMam=false}
+  }
+  if(dropped){
+    const now=Date.now();
+    if(now-_toppingToastAt>1500){_toppingToastAt=now;toast('🥬 Hết '+dropped+' — khách bỏ topping này')}
+    return true;
+  }
+  return false;
+}
 function revalidateAllCustWants(){
   S._wantsDirty=false;
   const avail=listOrderableMenus();
@@ -5722,6 +5862,7 @@ function revalidateAllCustWants(){
     for(let i=0;i<tables.length;i++){
       const cust=tables[i];
       if(!cust)continue;
+      if(dropUnavailableToppings(cust))changed=true;
 
       // Còn làm được order hiện tại → giữ
       if(custCanFulfill(cust)){
@@ -6637,7 +6778,7 @@ cooker.className='cooker'+(cooking?' active':'');
       mamEl.style.display='';
       const mq=stockOf('mam_tom');
       mamEl.innerHTML=`<span class="sq">${box.mamTom||0}</span><div class="si">🫙</div><div class="sn">Mắm tôm</div>`;
-      mamEl.style.opacity=mq<=0&&!box.mamTom?.35:1;
+      mamEl.style.opacity=(mq<=0&&!box.mamTom)?0.35:1;
       mamEl.onclick=()=>doAddMamTom();
     }
   }
@@ -6646,8 +6787,8 @@ cooker.className='cooker'+(cooking?' active':'');
   const sotEl=document.getElementById('sauce-sot');
   if(sotEl&&isIngUnlocked('tuong')){
     sotEl.style.display='';
-    sotEl.innerHTML=`<span class="sq">${box.sauce||0}</span><div class="si">${iconHTML(INGREDIENTS.tuong.icon,30)}</div><div class="sn">Tương ớt</div>`;
-    sotEl.style.opacity=stockOf('tuong')<=0&&!box.sauce?.35:1;
+    sotEl.innerHTML=`<span class="sq">${box.sauce||0}</span><div class="si">${iconHTML(INGREDIENTS.tuong.icon,30)}</div><div class="sn">Tương ớt</div><div style="font-size:9px;font-weight:800;color:#00897B">Kho ${stockOf('tuong')}</div>`;
+    sotEl.style.opacity=(stockOf('tuong')<=0&&!box.sauce)?0.35:1;
     sotEl.onclick=()=>doAddSauce();
   }else if(sotEl)sotEl.style.display='none';
 const canServe=box.hasBox&&box.hasRice&&(box.mains.length>0||box.canh||box.sides.includes('trung'));
@@ -6701,12 +6842,22 @@ function doStaffCook(){
     if(box.mamTom){S.stock.mam_tom=(S.stock.mam_tom||0)+1}
     box={hasBox:true,hasRice:false,mains:[],sides:[],canh:null,sauce:0,mamTom:0};
 
+    // Nguyên liệu THIẾT YẾU (cơm + món theo order) mới chặn phụ bếp.
+    // Hết topping thêm / mắm tôm thì bỏ qua topping đó, phụ bếp vẫn làm tiếp.
     const need=['gao',...m.need.filter(x=>x!=='hop'&&x!=='gao')];
-    if(correct&&cust.extraSide)need.push(cust.extraSide);
-    if(correct&&cust.wantMam)need.push('mam_tom');
+    const skipped=[];
+    if(correct&&cust.extraSide){
+      if(stockOf(cust.extraSide)>0&&!isIngExpired(cust.extraSide))need.push(cust.extraSide);
+      else{skipped.push(INGREDIENTS[cust.extraSide]?.name||cust.extraSide);cust.extraSide=null}
+    }
+    if(correct&&cust.wantMam){
+      if(stockOf('mam_tom')>0&&!isIngExpired('mam_tom'))need.push('mam_tom');
+      else{skipped.push('Mắm tôm');cust.wantMam=false}
+    }
     for(const n of need){
       if(stockOf(n)<=0){toast('NV: thiếu '+(INGREDIENTS[n]?.name||n));sfx('bad');staffBusy=false;return}
     }
+    if(skipped.length)toast('🥬 Hết '+skipped.join(', ')+' — phụ bếp bỏ qua, vẫn làm tiếp');
     const steps=[];
     steps.push({label:'Múc cơm',run:()=>{
       if(stockOf('gao')<=0||isIngExpired('gao')){toast('Hết/hỏng gạo');sfx('bad');return}
@@ -6752,30 +6903,28 @@ function doStaffCook(){
     if(correct&&cust.wantMam&&stockOf('mam_tom')>0){
       steps.push({label:'Mắm tôm',run:()=>{S.stock.mam_tom=(S.stock.mam_tom||0)-1;box.mamTom=1}});
     }
-    steps.push({label:'Xong!',run:()=>{}});
-
     const btnNv=document.getElementById('btn-nv');
     if(btnNv)btnNv.disabled=true;
     // Phụ bếp 1 nhanh hơn rõ; phụ bếp 2 chậm hơn
     const fast=staffId==='nv_pro';
-    const totalMs=fast?1800:4200;
-    const stepMs=Math.max(fast?220:500,Math.floor(totalMs/Math.max(1,steps.length)));
+    const totalMs=fast?1500:3400;
+    const stepMs=Math.max(fast?200:420,Math.floor(totalMs/Math.max(1,steps.length)));
     let si=0;
+    const finish=()=>{
+      staffBusy=false;
+      if(btnNv){btnNv.disabled=false;btnNv.innerHTML='👨‍🍳'}
+      if(!correct){toast('👨‍🍳 Phụ bếp làm lệch: '+m.name);sfx('bad')}
+      else if(!(S.upgrades.tu_giao>0))toast('Phụ bếp xong');
+      save();updateSell();
+      tryAutoServe();   // đĩa đúng order → giao NGAY, không chờ thêm nhịp nào
+    };
     const doStep=()=>{
-      if(si>=steps.length){
-        if(!correct){toast('👨‍🍳 Phụ bếp làm lệch: '+m.name);sfx('bad')}
-        else toast('Phụ bếp xong');
-        staffBusy=false;
-        if(btnNv){btnNv.disabled=false;btnNv.innerHTML='👨‍🍳'}
-        save();updateSell();
-        tryAutoServe();
-        return;
-      }
+      if(S.phase!=='sell'){staffBusy=false;if(btnNv)btnNv.disabled=false;return}
       try{steps[si].run()}catch(e){}
       sfx(si===0?'cook':'add');
-      if(btnNv)btnNv.innerHTML='👨‍🍳';
-      updateSell();
       si++;
+      if(si>=steps.length){finish();return}   // làm xong bước cuối là kết thúc luôn (không đợi thêm)
+      updateSell();
       setTimeout(doStep,stepMs);
     };
     toast((staffId==='nv_pro'?'👨‍🍳 Phụ bếp 1':'🧑‍🍳 Phụ bếp 2')+' đang nấu trên đĩa...');
@@ -6830,25 +6979,16 @@ function activeBepStaff(){
 function doGetBox(){
   if(box.hasBox){toast('Đã có đĩa');sfx('bad');return}
   if(stockOf('hop')<=0){toast('Hết đĩa! Tạm dừng → đóng cửa hoặc vay tiền nhập');sfx('bad');return}
-  S.stock.hop--;box.hasBox=true;sfx('add');save();updateSell();tryAutoServe();advanceCookGuide('box');
+  S.stock.hop--;box.hasBox=true;sfx('add');save();updateSell();advanceCookGuide('box');
   // NV hỗ trợ sốt / topping
   const custNow=tables[selectedTable];
   if(custNow&&box.hasBox&&box.hasRice){
     if(applySupportStaff(custNow)){/* silent help */}
   }
-  // Phụ bếp: chỉ nấu khi BẠN đã lấy đĩa
-  if(hasCookStaff()&&tables[selectedTable]&&!staffBusy&&!cooking&&box.hasBox){
-    setTimeout(()=>{
-      if(S.phase!=='sell'||staffBusy||cooking||paused)return;
-      const c=tables[selectedTable];
-      if(!c||!box.hasBox||c.outOfStock)return;
-      if(!box.hasRice||(!box.mains.length&&!box.sides.length&&!box.canh)){
-        doStaffCook();
-      }
-    },400);
+  // Phụ bếp: chỉ nấu khi BẠN đã lấy đĩa — có đĩa là NV bắt tay vào làm ngay
+  if(hasCookStaff()&&!staffBusy&&!cooking){
+    staffTryContinue();
   }
-  // Tự giao suất (nâng cấp lv3)
-  tryAutoServe();
   // Cô Hương: gợi ý đi chợ nếu thiếu món khách đang order
   if((S.upgrades.di_cho||0)>0&&custNow&&(S._diChoTrips||0)<4){
     const need=(MENU[custNow.want]?.need)||[];
@@ -7023,22 +7163,44 @@ function plateReadyToServe(){
   if(!(box.mains.length||box.sides.length||box.canh))return false;
   return true;
 }
+/** Đĩa đã ĐÚNG HẾT order của khách đang chọn (món, topping thêm, canh, mắm) — giống điều kiện 'perfect' của doServe */
+function plateMatchesOrder(){
+  const cust=tables[selectedTable];
+  if(!cust||!box.hasBox||!box.hasRice||cooking)return false;
+  if(!(box.mains.length||box.sides.length||box.canh))return false;
+  if(!box.canh)return false;
+  if(matchBox()!==cust.want)return false;
+  if(cust.extraSide&&!box.sides.includes(cust.extraSide))return false;
+  const orderNeed=new Set((MENU[cust.want]?.need)||[]);
+  if(box.sides.some(x=>x!==cust.extraSide&&!orderNeed.has(x)))return false;
+  if(cust.wantMam&&!(box.mamTom>0))return false;
+  return true;
+}
+let _autoServeLock=false;
 function tryAutoServe(){
   if(S.phase!=='sell'||paused||staffBusy||cooking)return;
   if(!(S.upgrades.tu_giao>0))return;
-  if(!plateReadyToServe())return;
-  if(S._autoServing)return;
-  S._autoServing=true;
-  setTimeout(()=>{
-    S._autoServing=false;
-    if(S.phase!=='sell'||paused)return;
-    if(!(S.upgrades.tu_giao>0))return;
-    if(!plateReadyToServe())return;
-    const btn=document.getElementById('btn-giao');
-    if(btn&&btn.disabled)return;
-    
-    doServe();
-  },450);
+  if(_autoServeLock)return;
+  if(!plateMatchesOrder())return;
+  _autoServeLock=true;
+  try{doServe()}finally{_autoServeLock=false}   // giao ngay, không timer
+}
+function staffTryContinue(){
+  if(S.phase!=='sell'||paused||S.bepResting)return;
+  if(!hasCookStaff()||staffBusy||cooking)return;
+  if(!tables[selectedTable]){
+    const ni=tables.findIndex(x=>x);
+    if(ni>=0)selectedTable=ni;
+  }
+  if(!tables[selectedTable])return;
+  // Phụ bếp 1 & 2 đều KHÔNG tự lấy đĩa — người chơi tự lấy đĩa, có đĩa rồi NV mới nấu
+  if(!box.hasBox)return;
+  const empty=!box.hasRice&&!(box.mains&&box.mains.length)&&!(box.sides&&box.sides.length)&&!box.canh;
+  if(empty){
+    try{doStaffCook()}catch(e){staffBusy=false}
+  }else if(S.upgrades.tu_giao>0){
+    tryAutoServe();
+  }
 }
 
 function doServe(){
