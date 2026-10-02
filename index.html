@@ -5111,6 +5111,8 @@ function showPauseMenu(){
   };
   document.getElementById('pm-close').onclick=()=>{
     // Đóng sớm (nghỉ) vẫn được từ menu tạm dừng — tính nghỉ ngày
+    // Chưa bán suất nào mà đóng cửa = cả quán nghỉ → nhân viên không bị trừ lương
+    S._restDay=(S.soldToday||0)===0;
     paused=false;modal.hidden=true;stopPatienceLoop();stopTimeLoop();stopCook();
     S.phase='end';sfx('click');save();render();
   };
@@ -5515,6 +5517,8 @@ function doStartSell(){
   S.gameMin=OPEN_MIN; // 10:30
   S._closingSoon=false;S._walkIns=0;S._farDeliv=0;S._onlineToday=0;S._diChoTrips=0;S._diChoHinted=false;
   paused=false;S.phase='sell';
+  S._restDay=false;S._bepWorked={};
+  try{const a=activeBepStaff();if(a)S._bepWorked[a]=true}catch(e){}   // phụ bếp đang đi làm lúc mở cửa → tính lương
   try{revalidateAllCustWants()}catch(e){}
   save();render();
   const prOpen=avgPriceRatio();
@@ -6736,6 +6740,8 @@ function doStaffCook(){
   staffBusy=true;
   try{
     const staffId=activeBepStaff();
+    if(!S._bepWorked)S._bepWorked={};
+    S._bepWorked[staffId]=true;   // đã nấu trong ngày → tính lương
     const ug=UPGRADES.find(x=>x.id===staffId);
     const rate=(ug&&ug.correctRate!=null)?ug.correctRate:0.7;
     const correct=Math.random()<rate;
@@ -9484,7 +9490,7 @@ function renderNang(){
       let extraBtn='';
       if(owned&&(u.exclusive==='bep_nv'||u.id==='nv_pro'||u.id==='nv_cheap')){
         const on=activeBepStaff()===u.id;
-        sub+=(on?' · <b style="color:#2E7D32">Đang làm</b>':' · <span style="color:#E84A6F">Đang nghỉ</span>');
+        sub+=(on?' · <b style="color:#2E7D32">Đang làm</b>':' · <span style="color:#E84A6F">Đang nghỉ · không tính lương</span>');
         extraBtn=on
           ?`<button type="button" data-rest="${u.id}" style="margin-top:4px;font-size:10px;padding:4px 8px;border-radius:8px;background:#FFF3E0;border:1px solid #FFB74D;color:#E65100;font-weight:700">Cho nghỉ</button>`
           :`<button type="button" data-work="${u.id}" style="margin-top:4px;font-size:10px;padding:4px 8px;border-radius:8px;background:#E8F5E9;border:1px solid #81C784;color:#2E7D32;font-weight:700">Đi làm</button>`;
@@ -9827,19 +9833,43 @@ function dayMenuSalesReport(){
   }
   return {best,slow,totalSold:sold.reduce((s,x)=>s+x.n,0)};
 }
+/** Lương trong ngày — nhân viên nghỉ thì KHÔNG trừ.
+ *  • Phụ bếp 1/2: chỉ trả người đang đi làm lúc mở cửa (hoặc đã nấu trong ngày). "Cho nghỉ" / người không được dùng → 0đ.
+ *  • Quán đóng cửa sớm khi chưa bán suất nào (ngày nghỉ) → cả quán nghỉ, không ai bị trừ lương. */
+function dailyWageReport(){
+  const list=[];let total=0;
+  const restDay=!!S._restDay;
+  for(const u of UPGRADES){
+    const cnt=S.upgrades[u.id]||0;
+    if(!u.wage||cnt<=0)continue;
+    const full=u.wage*cnt;
+    let pay=full,why='';
+    if(restDay){pay=0;why='nghỉ cả ngày'}
+    else if(u.exclusive==='bep_nv'){
+      const worked=S._bepWorked?!!S._bepWorked[u.id]:(activeBepStaff()===u.id);
+      if(!worked){pay=0;why='đang nghỉ'}
+    }
+    list.push({id:u.id,name:u.name,wage:full,pay,why});
+    total+=pay;
+  }
+  return {total,list};
+}
 function renderEnd(){
   stopPatienceLoop();stopTimeLoop();stopCook();paused=false;
+  // Đã chốt sổ ngày này rồi → lấy lại số liệu đã chốt, KHÔNG trừ lương/thuê/nợ lần nữa
+  const snap=(S._endSnap&&S._endSnap.day===S.day)?S._endSnap:null;
+  let bm=0,bx=0,dx=0,wage=0,rent=0,ol=S.level,taxInfo=null,wageRep=null;
+  if(snap){
+    bm=snap.bm;bx=snap.bx;dx=snap.dx;wage=snap.wage;rent=snap.rent;ol=snap.ol;taxInfo=snap.taxInfo;wageRep=snap.wageRep;
+  }else{
   S.quests.forEach(q=>{if(q.id==='no_leave')q.progress=S.leftToday===0?1:0});
-  let bm=0,bx=0;S.quests.forEach(q=>{if(q.progress>=q.target){bm+=q.reward;bx+=q.xp}});
-  const dx=S.soldToday*3+Math.max(0,8-S.leftToday*2);
-  // trừ lương nhân viên
-  let wage=0;
-  for(const u of UPGRADES){
-    if(u.wage&&(S.upgrades[u.id]||0)>0)wage+=u.wage*(S.upgrades[u.id]||1);
-  }
+  S.quests.forEach(q=>{if(q.progress>=q.target){bm+=q.reward;bx+=q.xp}});
+  dx=S.soldToday*3+Math.max(0,8-S.leftToday*2);
+  // trừ lương nhân viên — chỉ người thực sự đi làm
+  wageRep=dailyWageReport();wage=wageRep.total;
   if(wage>0){S.money=Math.round((S.money-wage)*10)/10;S.costToday=Math.round((S.costToday+wage)*10)/10}
   // thuê mặt bằng (nhẹ ngày đầu)
-  const rent=dailyRent();
+  rent=dailyRent();
   if(rent>0){S.money=Math.round((S.money-rent)*10)/10;S.costToday=Math.round((S.costToday+rent)*10)/10}
   // Ngày 1–2: không để két âm vì thuê/lương (tránh phá sản oan)
   if((S.day||1)<=2 && S.money<0){S.money=0}
@@ -9870,9 +9900,11 @@ function renderEnd(){
   S.avgRevenue=S.avgRevenue?Math.round((S.avgRevenue*0.7+S.revenueToday*0.3)*10)/10:S.revenueToday;
   const dayProfit=Math.round((S.revenueToday-S.costToday+bm)*10)/10;
   S.totalProfit=Math.round(((S.totalProfit||0)+dayProfit)*10)/10;
-  let taxInfo=null;try{taxInfo=accrueDailyTax()}catch(e){}
-  const ol=S.level;S.level=shopLevel().id;
+  try{taxInfo=accrueDailyTax()}catch(e){}
+  ol=S.level;S.level=shopLevel().id;
   if(S.level>ol)sfx('level');else if(bm)sfx('quest');
+  S._endSnap={day:S.day,bm,bx,dx,wage,rent,ol,taxInfo,wageRep};   // đánh dấu đã chốt sổ ngày này
+  }
   // phá sản nếu nghỉ 3 ngày liên tục
   if((S.restStreak||0)>=3||S.money<0){
     const hasBk=!!localStorage.getItem('comTruaNgon_backup');
@@ -9916,6 +9948,11 @@ function renderEnd(){
       })()}
     </div>
     ${wage?`<div class="stat"><span>Lương NV</span><strong style="color:#C62828">-${moneyStr(wage)}</strong></div>`:''}
+    ${(()=>{
+      const off=((wageRep&&wageRep.list)||[]).filter(x=>x.pay===0&&x.wage>0);
+      if(!off.length)return '';
+      return '<div style="font-size:11px;color:#2E7D32;text-align:right;margin:-2px 4px 6px;line-height:1.4">🛌 '+off.map(x=>x.name.replace(/^\S+\s/,'')+' '+x.why).join(' · ')+' — <b>không trừ lương</b></div>';
+    })()}
     ${rent?`<div class="stat"><span>Thuê mặt bằng</span><strong style="color:#C62828">-${moneyStr(rent)}</strong></div>`:''}
     <div class="stat"><span>Thưởng nhiệm vụ</span><strong>+${moneyStr(bm)}</strong></div>
     ${S.logo?`<div class="stat"><span>Logo thương hiệu</span><strong style="color:#2E7D32">+0.1 sao ✨</strong></div>`:''}
